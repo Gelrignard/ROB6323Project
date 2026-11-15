@@ -1,0 +1,9 @@
+* text=auto eol=lf
+*.STL binary
+*.stl binary
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.npz binary
+# Keep vendored asset bytes identical to the upstream hash manifest.
+sim_env/models/unitree_g1/** -text

@@ -1,0 +1,51 @@
+<mujoco model="Reduced LIP walker with prescribed feet">
+  <!-- Only com_x and com_y are dynamic. Legs and feet are visual mocap
+       geometry, NOT articulated/contact-driven humanoid dynamics. The
+       simulation applies the LIP ground reaction explicitly in Python. -->
+  <compiler angle="radian"/>
+  <option timestep="0.002" gravity="0 0 -9.81" integrator="Euler"/>
+  <visual>
+    <global offwidth="1280" offheight="720"/>
+    <quality shadowsize="2048"/>
+    <headlight ambient="0.4 0.4 0.4" diffuse="0.6 0.6 0.6"/>
+    <map znear="0.01" zfar="80"/>
+  </visual>
+  <statistic center="5 5 0.7" extent="7"/>
+  <asset>
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1="0.19 0.24 0.29" rgb2="0.23 0.28 0.33"/>
+    <material name="floor" texture="grid" texrepeat="10 10" reflectance="0.08"/>
+  </asset>
+  <default>
+    <joint damping="0" frictionloss="0" armature="0"/>
+    <geom contype="0" conaffinity="0"/>
+  </default>
+  <worldbody>
+    <light pos="2 2 8" dir="0.2 0.2 -1" diffuse="0.8 0.8 0.8"/>
+    <geom name="test_patch" type="box" pos="5 5 -0.03" size="5 5 0.03" material="floor"/>
+    <geom type="box" pos="0 5 0.004" size="0.015 5 0.005" rgba="0.1 0.85 0.85 1"/>
+    <geom type="box" pos="10 5 0.004" size="0.015 5 0.005" rgba="0.1 0.85 0.85 1"/>
+    <geom type="box" pos="5 0 0.004" size="5 0.015 0.005" rgba="0.1 0.85 0.85 1"/>
+    <geom type="box" pos="5 10 0.004" size="5 0.015 0.005" rgba="0.1 0.85 0.85 1"/>
+    <body name="com" pos="0 0 0.9">
+      <inertial pos="0 0 0" mass="60" diaginertia="1 1 1"/>
+      <joint name="com_x" type="slide" axis="1 0 0"/>
+      <joint name="com_y" type="slide" axis="0 1 0"/>
+      <geom name="torso_visual" type="box" size="0.10 0.18 0.22" pos="0 0 0.13" rgba="0.20 0.65 0.92 1"/>
+      <geom type="sphere" size="0.09" pos="0 0 0.48" rgba="0.88 0.91 0.96 1"/>
+      <geom type="sphere" size="0.045" rgba="1 0.72 0.15 1"/>
+      <site name="center_of_mass" size="0.025" rgba="1 0.72 0.15 1"/>
+    </body>
+    <body name="left_foot" mocap="true" pos="1 5.09 0.025">
+      <geom name="left_foot_visual" type="box" size="0.14 0.07 0.025" rgba="0.10 0.75 0.82 1"/>
+    </body>
+    <body name="right_foot" mocap="true" pos="1 4.91 0.025">
+      <geom name="right_foot_visual" type="box" size="0.14 0.07 0.025" rgba="0.98 0.57 0.23 1"/>
+    </body>
+    <body name="left_thigh" mocap="true"><geom name="left_thigh_geom" type="capsule" size="0.045 0.2" rgba="0.12 0.55 0.69 1"/></body>
+    <body name="left_shin" mocap="true"><geom name="left_shin_geom" type="capsule" size="0.035 0.2" rgba="0.16 0.65 0.75 1"/></body>
+    <body name="right_thigh" mocap="true"><geom name="right_thigh_geom" type="capsule" size="0.045 0.2" rgba="0.86 0.43 0.20 1"/></body>
+    <body name="right_shin" mocap="true"><geom name="right_shin_geom" type="capsule" size="0.035 0.2" rgba="0.95 0.53 0.23 1"/></body>
+    <body name="cop_marker" mocap="true"><geom type="sphere" size="0.035" rgba="1 0.8 0.12 1"/></body>
+    <body name="reference_marker" mocap="true"><geom type="sphere" size="0.022" rgba="0.3 1 0.45 0.65"/></body>
+  </worldbody>
+</mujoco>
