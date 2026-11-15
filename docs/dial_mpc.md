@@ -1,105 +1,138 @@
-# DIAL-MPC comparison: interface and current status
+# DIAL-MPC G1 implementation
 
-The experiment should compare the original walking PPO policy, the same policy
-after disturbance fine-tuning, and a working DIAL-MPC controller on the same G1
-plant and held-out scenarios. No DIAL-MPC score is currently reported by this
-repository. `--stand` is only an integration diagnostic and is never labelled MPC.
+The project now implements a **CPU NumPy/MuJoCo port of DIAL-MPC**, with a
+G1-specific tracking objective and gait reference. It is an online optimizer,
+not an RL policy; it needs no trained checkpoint. This is not the upstream H1
+example, and successful walking/robustness must be established by the saved
+physical runs rather than inferred from the optimizer implementation.
 
-The [official DIAL-MPC implementation](https://github.com/LeCAR-Lab/dial-mpc)
-optimizes full-order legged control through sampled simulator rollouts. Its
-documented humanoid example is Unitree H1, and the upstream recommended setup is
-Ubuntu with CUDA. A G1 controller must be ported and validated; changing the robot
-name in an H1 configuration is not an established baseline. The
-[paper](https://arxiv.org/abs/2409.15610) describes the algorithm being compared.
+The saved [three-case demonstration](../mpc/assets/comparison.mp4) completed
+4 s of physical walking in calm, random-pulse and full configured vortex
+conditions, with 0.509/0.502/0.495 m forward travel respectively. The same
+controller configuration, initial state and seed were used. The random case
+reached 27.57 N injected link force, and the vortex reached 26.48 N integrated
+aerodynamic force. [Recorded results](../mpc/results/g1_demo.json) preserve
+the actual event schedule and metrics. These short single-seed successes do
+not establish a broad robustness benchmark. CPU planning averaged
+1.28-1.45 s per 0.02 s control interval.
 
-## Common evaluation protocol
+## What the paper does
 
-`python -m rl.evaluate` runs each selected controller with the same scenario
-definitions, commanded velocity, episode horizon, and seed list. Test seeds
-default to 10000 onward; do not reuse those seeds for training or tuning.
-Outputs include episode metrics, grouped scores, exact environment
-configurations, policy information access, and optional state/action rollouts.
-Physical settings are inherited from the first PPO bundle; all other bundles
-must match that common plant. Use `--config path.json` to set a shared base
-configuration explicitly (for example for a plugin-only comparison).
-Each scenario then overrides wind and disturbance settings, training
-randomization, the straight walking command, and curriculum strength (always
-1.0 in tests). A checkpoint from an early curriculum stage therefore does not
-receive weaker evaluation pushes.
-Success requires completing the horizon with forward progress and low tracking
-error; merely surviving upright or receiving a large reward is insufficient.
+Xue et al., [Full-Order Sampling-Based MPC for Torque-Level Locomotion Control
+via Diffusion-Style Annealing](https://arxiv.org/abs/2409.15610), optimize
+control sequences by rolling out full robot dynamics. The objective may
+include contact-dependent, nonlinear and nonsmooth terms; no dynamics
+linearization is required.
+
+Each planning cycle samples noisy candidate control sequences, evaluates
+their costs, and moves the nominal sequence toward low-cost candidates:
+
+```text
+candidate[k] = nominal + noise[k]
+weight[k] ∝ exp(-cost[k] / temperature)
+updated_nominal = sum(weight[k] * candidate[k])
+```
+
+DIAL adds two annealing schedules to this MPPI-style update: exploration
+shrinks across refinement iterations, and near-term actions receive less
+noise than distant actions. Receding the horizon lets future actions undergo
+many refinements before execution. The broad-to-narrow search addresses the
+coverage/convergence tradeoff of fixed-noise sampling. “Diffusion-inspired”
+does not mean a trained denoising network is used; simulation-based weighted
+updates provide the refinement.
+
+The official implementation uses action knots, quadratic interpolation,
+sample-standardized rewards and softmax weighting. We preserve these
+features. See [algorithm provenance](../mpc/UPSTREAM.md) for the pinned
+upstream revision and exact numerical differences.
+
+## How the G1 port works
+
+- `mpc/dial.py` implements the two annealing axes and weighted update. Its
+  noise standard deviation is
+  `sigma * horizon_decay**(K-j) * trajectory_decay**i`, with refinement index
+  `i`, knot index `j`, and final knot index `K`.
+- `mpc/controller.py` evaluates candidates using threaded native MuJoCo
+  rollouts of the full floating-base G1, including contacts, gravity and
+  force-limited PD actuator dynamics. This is not reduced-order prediction.
+- `mpc/reference.py` supplies a smooth CoM/foot reference and inverse-kinematic
+  joint targets as a prior. The default optimizer searches residual targets
+  on the 12 leg actuators; the remaining actuators follow reference targets.
+  The model still contains all 29 actuators and full articulated dynamics.
+- Costs track CoM position/velocity, torso orientation, feet and joint pose,
+  while penalizing residual actions, stance-foot slip and falling. These are
+  G1 adaptation choices, not an assertion that the paper used this exact cost.
+- Planning state is copied from the actual plant. Candidate trajectories use
+  independent simulation data. Only the chosen joint targets are applied to
+  the real plant; its positions and velocities are never replaced by IK or
+  predicted states after initialization.
+
+The official H1 “torque” path also samples position references and computes
+bounded PD torques. Our plant uses its native position-PD actuators, with
+their gains, damping, force bounds and integration timestep reproduced in
+the planning model. The actuator implementation/rate is a stated port
+difference, not a claim that raw torque actions and position targets are
+interchangeable.
+
+The synchronous controller uses `freeze_first=False`, allowing the action
+about to be executed to be optimized immediately. The optimizer also
+supports upstream's frozen-first-knot convention. Both real and planning
+paths apply physical actuator target limits, including spline overshoot.
+
+## Disturbance information and prediction
+
+Two planner modes are supported:
+
+| Setting | Prediction assumption |
+| --- | --- |
+| `wind_prediction="none"` | No aerodynamic load in candidate rollouts; feedback observes its effects through the current state. |
+| `wind_prediction="current_wrench"` | Hold the most recently measured aerodynamic force/torque on every body constant over the horizon. |
+
+The second mode is explicitly privileged simulated load measurement. It is
+not a forecast of the wind field: actual surface drag changes with position,
+orientation and body velocity. Neither mode queries future random impulses,
+and neither has a future-event oracle. The plant applies aerodynamic and
+random loads at every 0.002 s physics step.
+
+## Run and inspect physical cases
+
+From the repository root with the existing project environment:
 
 ```powershell
-python -m rl.evaluate --checkpoint rl/runs/original --checkpoint rl/runs/robust --episodes 10 --save-rollouts
-python -m rl.evaluate --plugin my_dial_adapter:create_controller --episodes 10 --save-rollouts
+.\.venv\Scripts\python.exe -m mpc.run --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --disturbance-strength 0.2 --video --output mpc/outputs/comparison
+.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/comparison/calm mpc/outputs/comparison/random mpc/outputs/comparison/tornado --output mpc/outputs/comparison/comparison.mp4
 ```
 
-The currently supported plant uses 29 joint-position targets with the vendor's
-force-limited PD actuators. PPO's normalized actions map to the exact joint
-ordering, nominal angles, and action scale recorded in `env.schema()`. An MPC
-controller must predict these same actuator dynamics. Raw torques must **not**
-be relabelled as target angles. A torque-level comparison requires an explicit
-torque actuator mode and retraining/adapting PPO to that common plant, or a
-validated MPC formulation that optimizes position targets. Neither adaptation
-has been claimed complete here.
+Each case writes `summary.json`, `planner.json`, `trajectory.npz` and a model
+snapshot; `--video` renders the recorded physical states. Use a new output
+directory for each experiment. The renderer does not impose a successful
+trajectory or hide a failure. Surface drag arrows represent aerodynamic
+forces only, with 50% robot opacity.
 
-## External adapter protocol
+Useful arguments are `--controller-config <JSON>`, `--seed`, `--wind-scale`
+(multiplies velocity), `--disturbance-strength` and `--surface-patches`.
+Controller settings include samples, horizon, refinement iterations, knot
+count, action scale, active actuators, cost weights and wind prediction.
+The random-case default uses 20% of the 150 N/20 N m/30 N m configured maxima;
+report the actual saved strengths/events rather than calling every run a
+large-disturbance test.
 
-The evaluator imports a factory in your Python module:
+Summaries report completed duration, physical progress, foot lift/landing
+events, velocity error, failure and planner wall time. Passing the duration
+alone does not count as walking. The initial project walking check requires
+forward progress, at least one landing per foot and low velocity RMSE. It is
+a diagnostic criterion, not a validated locomotion benchmark definition.
 
-```python
-def create_controller(env, config):
-    return Controller(env, config)
+## Limits and comparison protocol
 
-class Controller:
-    name = "dial_mpc_g1"
-    action_mode = "joint_targets"  # or "normalized"
-    information_access = "current full simulated state; no future disturbance oracle"
-    wind_access = "none"  # alternatively current_measurement or known_field
+This implementation runs **synchronously and offline on CPU**: simulated time
+waits for planning. Compare measured planner latency with the 0.02 s control
+interval before making any real-time claim. The upstream paper's GPU results
+do not establish this port's timing or performance.
 
-    def __init__(self, env, config):
-        self.env = env
-        # Construct the actual upstream DIAL-MPC planner and matching G1 model.
-        # This documentation does not substitute a different controller.
-
-    def reset(self, *, seed, info):
-        # Seed/reinitialize the planner's own sampling and receding-horizon state.
-        pass
-
-    def act(self, observation, *, state):
-        # state contains current qpos, qvel, and time from the physical simulator.
-        # Return 29 finite angles in radians in env.schema() actuator order.
-        raise NotImplementedError("Connect and validate the real DIAL-MPC G1 port")
-```
-
-`joint_targets` are converted through `env.action_from_joint_targets(...,
-clip=False)`. Out-of-range targets raise explicitly instead of silently changing
-the planned action. `normalized` outputs must already be inside [-1,1]. The
-factory receives the environment for model construction, so a plugin author is
-responsible for declaring any privileged information used. The standard
-adapter forwards only the instantaneous state, not the future disturbance
-schedule. Reset receives only the command and current time; full episode
-initialization stays in evaluator logs. The adapter is not a security sandbox:
-plugins must not read the future random event schedule from the environment or
-reconstruct it from the paired seed. Declare wind access separately; a known
-wind field is an information advantage and must be labelled in results.
-Report state information advantages beside PPO, whose actor receives
-only its declared proprioceptive observation (including an ideal simulated
-base-velocity estimate in the native scaffold).
-
-## Before calling this a measured DIAL-MPC baseline
-
-1. Port the exact G1 geometry, inertias, joints, contacts, actuators, control
-   interval, and command interpretation into DIAL-MPC's rollout environment.
-2. Check one-step and multi-step predicted dynamics against this MuJoCo plant.
-3. Establish calm walking before adding held-out perturbations and wind fields.
-4. Match action limits and report controller information, planning horizon,
-   rollout count, compute hardware, and inference/planning latency.
-5. Run the paired evaluation suite. Report failures and boundary terminations,
-   not just successful videos, and distinguish synchronous evaluation from
-   meeting a real-time control deadline.
-
-The CPU MuJoCo environment is a reproducible course-project starting point. It
-is not GPU-vectorized MJX/Isaac training and does not establish sim-to-real
-transfer. Hardware claims require the selected checkpoint's estimator, timing,
-motor, and deployment interfaces to be reproduced and then validated.
+Compare calm, random-load and field conditions using the same model,
+controller configuration and initial state. Keep failure cases. The surface
+pressure model is approximate and the terrain is currently flat; these runs
+do not establish CFD fidelity, rescue-terrain performance or sim-to-real
+transfer. Later comparison with RL must also match actuation and disclose
+full-state/current-wrench information advantages.

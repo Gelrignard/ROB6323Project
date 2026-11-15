@@ -1,0 +1,517 @@
+{
+  "date": "2026-11-15",
+  "method": "DIAL-MPC G1 CPU port",
+  "algorithm_upstream_commit": "871c84f1cefbe9fa9d83a06b05ab4f0243c1a05c",
+  "g1_asset_commit": "370c43965323c0944b433b202aac5058b5f907a9",
+  "python": "3.12.14",
+  "mujoco": "3.17.0",
+  "tests_passed": 90,
+  "controller_config": {
+    "duration": 4.0,
+    "speed": 0.18,
+    "step_duration": 0.65,
+    "walk_start": 0.7,
+    "double_support_fraction": 0.3,
+    "swing_height": 0.04,
+    "com_lowering": 0.04,
+    "samples": 64,
+    "horizon_steps": 20,
+    "knot_intervals": 5,
+    "iterations": 3,
+    "init_iterations": 6,
+    "temperature": 0.05,
+    "sigma": 0.5,
+    "horizon_decay": 0.9,
+    "trajectory_decay": 0.4,
+    "freeze_first": false,
+    "action_scale": 0.2,
+    "active_actuators": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11
+    ],
+    "threads": 8,
+    "wind_prediction": "current_wrench",
+    "weights": {
+      "com_xy": 100.0,
+      "com_z": 600.0,
+      "velocity": 8.0,
+      "orientation": 500.0,
+      "foot_xy": 100.0,
+      "foot_z": 1500.0,
+      "joint": 1.0,
+      "residual": 0.1,
+      "foot_slip": 0.25
+    }
+  },
+  "initial_qpos": [
+    0.9746011558526996,
+    5.002726000073821,
+    0.7413203021483021,
+    1.0,
+    0.0,
+    0.0,
+    0.0,
+    -0.360798515378197,
+    -0.003987436501404835,
+    0.0023669217550455948,
+    0.8031418295811448,
+    -0.4423480331866193,
+    0.004637018304422859,
+    -0.36072741182982304,
+    -0.003987555724396611,
+    0.002366609110700177,
+    0.8029881398680013,
+    -0.442265446539601,
+    0.00463696125198465,
+    0.0,
+    0.0,
+    0.0,
+    0.2,
+    0.2,
+    0.0,
+    1.28,
+    0.0,
+    0.0,
+    0.0,
+    0.2,
+    -0.2,
+    0.0,
+    1.28,
+    0.0,
+    0.0,
+    0.0
+  ],
+  "physics_dt_s": 0.002,
+  "control_dt_s": 0.02,
+  "prediction_wind_access": "Exact current simulated aerodynamic link wrenches, held constant over prediction; no future random event access.",
+  "execution": "Synchronous offline CPU planning; video uses simulated time.",
+  "scope": "One seed, three 4-second flat-ground demonstrations; not a broad robustness or real-time benchmark.",
+  "cases": [
+    {
+      "scenario": "calm",
+      "seed": 7,
+      "requested_duration_s": 4.0,
+      "elapsed_simulation_s": 3.999999999999781,
+      "completed_requested_duration": true,
+      "failure_reason": null,
+      "walking_success": true,
+      "command_speed_mps": 0.18,
+      "forward_progress_m": 0.5091438564415401,
+      "velocity_tracking_rmse_mps": 0.23631210125858232,
+      "left_right_liftoffs": [
+        3,
+        4
+      ],
+      "left_right_landings": [
+        3,
+        4
+      ],
+      "left_right_max_sole_height_m": [
+        0.041658635819912686,
+        0.04246317452044425
+      ],
+      "minimum_pelvis_height_m": 0.726255052377873,
+      "minimum_upright_cosine": 0.9985856339801993,
+      "wall_seconds": 262.66554359998554,
+      "planner_mean_seconds": 1.2779146594845223,
+      "planner_p95_seconds": 1.3899871200905178,
+      "max_drag_force_N": 0.036649139123329816,
+      "max_drag_torque_about_com_Nm": 0.007436230796866514,
+      "wind_scale": 1.0,
+      "wind_field": {
+        "kind": "calm",
+        "velocity_mps": [
+          8.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0,
+        "center_m": [
+          50.0,
+          50.0
+        ],
+        "core_radius_m": 12.0,
+        "tangential_speed_mps": 12.0,
+        "inflow_speed_mps": 1.0,
+        "center_velocity_mps": [
+          0.15,
+          0.0
+        ],
+        "gust_amplitude_mps": [
+          4.0,
+          0.0,
+          0.0
+        ],
+        "gust_period_s": 3.0,
+        "gust_phase_rad": null,
+        "seed": 0,
+        "shear_mps_per_m": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "reference_height_m": 1.0,
+        "effective_gust_phase_rad": 4.002148315014479,
+        "coordinate_frame": "world Cartesian xyz, m and m/s",
+        "time_unit": "seconds",
+        "model": "prescribed field; no fluid feedback or CFD"
+      },
+      "disturbances": {
+        "config": {
+          "enabled": false,
+          "interval_s": [
+            0.35,
+            0.65
+          ],
+          "duration_s": [
+            0.12,
+            0.25
+          ],
+          "settle_time_s": 0.25,
+          "link_force_max_n": 150.0,
+          "link_torque_max_nm": 20.0,
+          "joint_torque_max_nm": 30.0,
+          "kind_probabilities": [
+            0.5,
+            0.2,
+            0.3
+          ],
+          "pulse_shape": "half_sine",
+          "body_names": [],
+          "joint_names": []
+        },
+        "seed": 100007,
+        "horizon_s": 4.0,
+        "strength": 0.2,
+        "events": [],
+        "link_frame": "world axes, forces and torques applied at each link COM",
+        "joint_frame": "generalized hinge-joint torque; floating-base DOFs excluded",
+        "schedule": "sampled once at reset; independent of controller state and sampling order"
+      },
+      "mujoco_warning_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "peak_injected_link_force_N": 0.0,
+      "peak_injected_link_torque_Nm": 0.0,
+      "peak_injected_joint_torque_Nm": 0.0,
+      "video": "../assets/calm.mp4"
+    },
+    {
+      "scenario": "random",
+      "seed": 7,
+      "requested_duration_s": 4.0,
+      "elapsed_simulation_s": 3.999999999999781,
+      "completed_requested_duration": true,
+      "failure_reason": null,
+      "walking_success": true,
+      "command_speed_mps": 0.18,
+      "forward_progress_m": 0.5020718660622013,
+      "velocity_tracking_rmse_mps": 0.23160311432602482,
+      "left_right_liftoffs": [
+        3,
+        4
+      ],
+      "left_right_landings": [
+        3,
+        4
+      ],
+      "left_right_max_sole_height_m": [
+        0.0418281163767426,
+        0.04050632060358716
+      ],
+      "minimum_pelvis_height_m": 0.7290713983237327,
+      "minimum_upright_cosine": 0.9985265029919919,
+      "wall_seconds": 266.800734099932,
+      "planner_mean_seconds": 1.2989546659844928,
+      "planner_p95_seconds": 1.4586033399915321,
+      "max_drag_force_N": 0.036514840212500406,
+      "max_drag_torque_about_com_Nm": 0.0059852723945544185,
+      "wind_scale": 1.0,
+      "wind_field": {
+        "kind": "calm",
+        "velocity_mps": [
+          8.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0,
+        "center_m": [
+          50.0,
+          50.0
+        ],
+        "core_radius_m": 12.0,
+        "tangential_speed_mps": 12.0,
+        "inflow_speed_mps": 1.0,
+        "center_velocity_mps": [
+          0.15,
+          0.0
+        ],
+        "gust_amplitude_mps": [
+          4.0,
+          0.0,
+          0.0
+        ],
+        "gust_period_s": 3.0,
+        "gust_phase_rad": null,
+        "seed": 0,
+        "shear_mps_per_m": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "reference_height_m": 1.0,
+        "effective_gust_phase_rad": 4.002148315014479,
+        "coordinate_frame": "world Cartesian xyz, m and m/s",
+        "time_unit": "seconds",
+        "model": "prescribed field; no fluid feedback or CFD"
+      },
+      "disturbances": {
+        "config": {
+          "enabled": true,
+          "interval_s": [
+            0.35,
+            0.65
+          ],
+          "duration_s": [
+            0.12,
+            0.25
+          ],
+          "settle_time_s": 0.25,
+          "link_force_max_n": 150.0,
+          "link_torque_max_nm": 20.0,
+          "joint_torque_max_nm": 30.0,
+          "kind_probabilities": [
+            0.5,
+            0.2,
+            0.3
+          ],
+          "pulse_shape": "half_sine",
+          "body_names": [],
+          "joint_names": []
+        },
+        "seed": 100007,
+        "horizon_s": 4.0,
+        "strength": 0.2,
+        "events": [
+          {
+            "kind": "link_force",
+            "target": "left_hip_roll_link",
+            "start_s": 0.6708294082189005,
+            "duration_s": 0.2409262051866974,
+            "amplitude": [
+              0.44233580288076785,
+              -7.792545583221326,
+              -14.860029984760695
+            ],
+            "pulse_shape": "half_sine"
+          },
+          {
+            "kind": "link_torque",
+            "target": "left_ankle_roll_link",
+            "start_s": 1.1347085076209966,
+            "duration_s": 0.15465258748544292,
+            "amplitude": [
+              0.3367978721771304,
+              -1.1579004445432242,
+              1.252809224188852
+            ],
+            "pulse_shape": "half_sine"
+          },
+          {
+            "kind": "link_force",
+            "target": "right_wrist_roll_link",
+            "start_s": 1.7293810018539928,
+            "duration_s": 0.24467309519221925,
+            "amplitude": [
+              18.6831493100549,
+              -20.02253486314796,
+              3.1599006750825542
+            ],
+            "pulse_shape": "half_sine"
+          },
+          {
+            "kind": "link_torque",
+            "target": "left_shoulder_yaw_link",
+            "start_s": 2.3117179477791323,
+            "duration_s": 0.22297378567986587,
+            "amplitude": [
+              2.8084786132858373,
+              -1.1312758550759654,
+              0.761011136875382
+            ],
+            "pulse_shape": "half_sine"
+          },
+          {
+            "kind": "link_force",
+            "target": "waist_yaw_link",
+            "start_s": 2.7095562306079977,
+            "duration_s": 0.21214474022883503,
+            "amplitude": [
+              23.4415125951848,
+              2.648930839454183,
+              -7.915457423027603
+            ],
+            "pulse_shape": "half_sine"
+          },
+          {
+            "kind": "joint_torque",
+            "target": "left_hip_yaw_joint",
+            "start_s": 3.3165559084591965,
+            "duration_s": 0.2059799049518789,
+            "amplitude": [
+              3.648730074158116
+            ],
+            "pulse_shape": "half_sine"
+          }
+        ],
+        "link_frame": "world axes, forces and torques applied at each link COM",
+        "joint_frame": "generalized hinge-joint torque; floating-base DOFs excluded",
+        "schedule": "sampled once at reset; independent of controller state and sampling order"
+      },
+      "mujoco_warning_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "peak_injected_link_force_N": 27.566953903490443,
+      "peak_injected_link_torque_Nm": 3.1217385926174672,
+      "peak_injected_joint_torque_Nm": 3.648642548020278,
+      "video": "../assets/random_disturbances.mp4"
+    },
+    {
+      "scenario": "tornado",
+      "seed": 7,
+      "requested_duration_s": 4.0,
+      "elapsed_simulation_s": 3.999999999999781,
+      "completed_requested_duration": true,
+      "failure_reason": null,
+      "walking_success": true,
+      "command_speed_mps": 0.18,
+      "forward_progress_m": 0.4952025692791767,
+      "velocity_tracking_rmse_mps": 0.16824041873585668,
+      "left_right_liftoffs": [
+        2,
+        7
+      ],
+      "left_right_landings": [
+        2,
+        6
+      ],
+      "left_right_max_sole_height_m": [
+        0.043584052276790054,
+        0.04500180087180028
+      ],
+      "minimum_pelvis_height_m": 0.7228763764028014,
+      "minimum_upright_cosine": 0.9978343996228467,
+      "wall_seconds": 301.13984200009145,
+      "planner_mean_seconds": 1.4544581730046775,
+      "planner_p95_seconds": 1.896653015015181,
+      "max_drag_force_N": 26.48391035565773,
+      "max_drag_torque_about_com_Nm": 1.633271691408868,
+      "wind_scale": 1.0,
+      "wind_field": {
+        "kind": "tornado",
+        "velocity_mps": [
+          8.0,
+          0.0,
+          0.0
+        ],
+        "scale": 1.0,
+        "center_m": [
+          50.0,
+          50.0
+        ],
+        "core_radius_m": 12.0,
+        "tangential_speed_mps": 12.0,
+        "inflow_speed_mps": 1.0,
+        "center_velocity_mps": [
+          0.15,
+          0.0
+        ],
+        "gust_amplitude_mps": [
+          4.0,
+          0.0,
+          0.0
+        ],
+        "gust_period_s": 3.0,
+        "gust_phase_rad": null,
+        "seed": 0,
+        "shear_mps_per_m": [
+          2.0,
+          0.0,
+          0.0
+        ],
+        "reference_height_m": 1.0,
+        "effective_gust_phase_rad": 4.002148315014479,
+        "coordinate_frame": "world Cartesian xyz, m and m/s",
+        "time_unit": "seconds",
+        "model": "prescribed field; no fluid feedback or CFD"
+      },
+      "disturbances": {
+        "config": {
+          "enabled": false,
+          "interval_s": [
+            0.35,
+            0.65
+          ],
+          "duration_s": [
+            0.12,
+            0.25
+          ],
+          "settle_time_s": 0.25,
+          "link_force_max_n": 150.0,
+          "link_torque_max_nm": 20.0,
+          "joint_torque_max_nm": 30.0,
+          "kind_probabilities": [
+            0.5,
+            0.2,
+            0.3
+          ],
+          "pulse_shape": "half_sine",
+          "body_names": [],
+          "joint_names": []
+        },
+        "seed": 100007,
+        "horizon_s": 4.0,
+        "strength": 0.2,
+        "events": [],
+        "link_frame": "world axes, forces and torques applied at each link COM",
+        "joint_frame": "generalized hinge-joint torque; floating-base DOFs excluded",
+        "schedule": "sampled once at reset; independent of controller state and sampling order"
+      },
+      "mujoco_warning_counts": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "peak_injected_link_force_N": 0.0,
+      "peak_injected_link_torque_Nm": 0.0,
+      "peak_injected_joint_torque_Nm": 0.0,
+      "video": "../assets/wind_field.mp4"
+    }
+  ]
+}

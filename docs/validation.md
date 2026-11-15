@@ -1,5 +1,18 @@
 # Local validation, 2026-11-15
 
+The subsequent DIAL-MPC implementation passes **90 total tests**, adding
+dual-annealing behavior, full-order rollout/plant parity, current-wrench and
+actuator-limit consistency, gait-reference geometry, and physical recording.
+The earlier RL checks below retain their original scope.
+
+The DIAL controller also completed three physical 4-second trials, all with
+the same seed, initial state and controller settings: calm, random joint/link
+loads, and full configured vortex. All passed the declared walking check.
+The [result bundle](../mpc/results/g1_demo.json) and
+[comparison video](../mpc/assets/comparison.mp4) report the measured progress,
+forces and offline CPU timing. All videos were decoded and their rendered
+frames inspected; physics was never replaced by the reference trajectory.
+
 Validated on Windows with CPython 3.12.14, MuJoCo 3.17.0, Gymnasium 1.4.0,
 Stable-Baselines3 2.9.2 and PyTorch 2.9.1 CPU. This validates software behavior,
 not learned walking competence or sim-to-real performance.
@@ -47,6 +60,7 @@ No custom unsafe checkpoint loader or global patch was introduced.
 ## Still unvalidated
 
 A selected external pretrained walking policy and its adapter, full PPO
-training/convergence, long-horizon disturbance robustness, G1 DIAL-MPC,
+training/convergence, long-horizon disturbance robustness, G1 DIAL-MPC beyond
+the three demonstrated short trials,
 rough terrain, GPU training throughput, aerodynamic fidelity and hardware
 transfer. These are not implied by passing the integration checks above.

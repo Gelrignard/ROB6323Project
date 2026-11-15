@@ -10,6 +10,8 @@ rl/evaluations/
 runs/
 logs/
 checkpoints/
+mpc/outputs/
+.cache/
 wandb/
 *.egg-info/
 .env

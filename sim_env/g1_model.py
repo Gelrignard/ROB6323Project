@@ -41,7 +41,7 @@ class G1Profile:
         return self.home_com.copy()
 
 
-def load_g1_model():
+def load_g1_model(mpc_sensors=False):
     """Return the full 29-actuator floating-base G1 on the 10 m test floor.
 
 Controls are joint position targets in radians. This function does not change
@@ -82,6 +82,18 @@ the upstream actuator gains, limits or dynamic state to mimic LIP motion.
                               ("reference_marker", ".2 1 .5 .55", ".018")):
         body = ET.SubElement(world, "body", name=name, mocap="true", pos="0 0 -1")
         ET.SubElement(body, "geom", type="sphere", size=size, rgba=rgba, density="0", contype="0", conaffinity="0")
+    if mpc_sensors:
+        # Observation-only additions for native batched full-order MPC rollouts.
+        # They do not change contacts, inertia, actuators, or physical state.
+        sensors = root.find("sensor")
+        if sensors is None:
+            sensors = ET.SubElement(root, "sensor")
+        for side in ("left", "right"):
+            ET.SubElement(sensors, "framepos", name=f"mpc_{side}_foot_pos", objtype="site", objname=f"{side}_sole")
+            ET.SubElement(sensors, "framelinvel", name=f"mpc_{side}_foot_vel", objtype="site", objname=f"{side}_sole")
+        ET.SubElement(sensors, "subtreecom", name="mpc_com", body="pelvis")
+        ET.SubElement(sensors, "subtreelinvel", name="mpc_com_vel", body="pelvis")
+        ET.SubElement(sensors, "framequat", name="mpc_torso_quat", objtype="body", objname="torso_link")
     return mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
 
 

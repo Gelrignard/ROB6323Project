@@ -1,9 +1,9 @@
 # G1 walking robustness under disturbances and wind
 
-ROB6323 Optimal Control & Reinforcement Learning course project: fine-tune a
-walking PPO policy using random joint torques and link forces/torques, then
-evaluate on held-out wind fields. Compare frozen nominal PPO against the
-fine-tuned policy; DIAL-MPC is the planned model-based comparison.
+ROB6323 Optimal Control & Reinforcement Learning course project: physical G1
+walking under joint/link disturbances and wind. The current executable
+controller is a G1 port of **DIAL-MPC**, with no learned policy required.
+Selecting and fine-tuning an RL walking policy remains a separate experiment.
 
 ## Current status
 
@@ -17,17 +17,70 @@ fine-tuned policy; DIAL-MPC is the planned model-based comparison.
   The PPO harness uses a project-native interface. Smoke training verifies
   execution, not walking ability. SONIC and Unitree RSL-RL weights require
   their original training stack and a tested adapter.
-- **DIAL-MPC has not been implemented for this G1.** The evaluator provides
-  an external-controller interface; [integration notes](docs/dial_mpc.md)
-  describe the remaining work. Standing is not labeled as an MPC baseline.
+- **DIAL-MPC is implemented in `mpc/`.** It uses dual annealing, native
+  full-order MuJoCo rollouts, and a G1-specific gait objective. The CPU
+  demonstration runs synchronously offline; it does not claim real-time
+  performance. [Method and port details](docs/dial_mpc.md).
 
-See [policy selection](docs/policy_selection.md): start with Unitree
-velocity-command PPO; consider SONIC later. Current terrain is flat.
+The earlier [policy-selection notes](docs/policy_selection.md) document
+candidate frameworks; no checkpoint choice is final. Current terrain is flat.
 Neither rough-terrain performance nor hardware transfer has been established.
 The [experiment protocol](docs/experiment_protocol.md) separates the required
 PPO comparison, optional ablations and later research claims.
-See [validation results](docs/validation.md) for the 74-test suite and the
-training, checkpoint continuation, evaluation and rendering smoke checks.
+See [validation results](docs/validation.md) for the earlier RL integration
+checks. The expanded suite now passes 90 tests, including DIAL optimizer,
+full-dynamics prediction parity, gait references and physical recording.
+
+## DIAL-MPC physical walking demonstrations
+
+[Watch the three-case comparison](mpc/assets/comparison.mp4).
+Individual videos: [calm](mpc/assets/calm.mp4),
+[random disturbances](mpc/assets/random_disturbances.mp4),
+[wind field](mpc/assets/wind_field.mp4).
+
+![Physical G1 DIAL-MPC comparison](mpc/assets/comparison.png)
+
+Measured with the same controller, initial state and seed (7):
+
+| Case | Duration | Forward travel | Walking check |
+| --- | --- | --- | --- |
+| Calm | 4 s | 0.509 m | Passed |
+| Six random joint/link pulses | 4 s | 0.502 m | Passed |
+| Full configured vortex | 4 s | 0.495 m | Passed |
+
+Peak injected link force was 27.57 N; peak modeled aerodynamic resultant in
+the vortex was 26.48 N. These are short single-seed demonstrations. Planning
+took approximately 1.28-1.45 s per 0.02 s control interval, so the videos play
+simulated time rather than wall time. [Machine-readable results](mpc/results/g1_demo.json)
+include configurations, event schedules, foot contacts, errors and timing.
+
+The DIAL code uses only `requirements.txt`; no Torch, JAX or RL checkpoint is
+needed. After installing those dependencies, run:
+
+```powershell
+.\.venv\Scripts\python.exe -m mpc --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --output mpc/outputs/demo --video
+.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/demo/calm mpc/outputs/demo/random mpc/outputs/demo/tornado --output mpc/outputs/demo/comparison.mp4
+```
+
+Allow several minutes per case on a CPU. `--video` renders the actual
+integrated trajectory with 50% robot opacity and aerodynamic drag vectors.
+Random injected loads are separately captioned. Each case records the exact
+compiled model, states, physical loads, contact events, planning latency and
+failure status; existing output directories are never overwritten.
+
+The demo config uses 64 sampled candidates per refinement, three refinements,
+and a 0.4 s horizon. It optimizes the 12 leg-joint references around an IK gait
+prior while integrating the entire floating-base 29-actuator G1. Upper-body
+targets hold their reference posture. The prior is never imposed on the
+physical state. This is an explicit G1 adaptation of the paper's optimizer,
+not a reproduction of the upstream H1 benchmark or a kinematic walking replay.
+
+`wind_prediction="current_wrench"` holds the currently available aerodynamic
+link wrenches constant during prediction. This is ideal current-load access,
+not a future-wind oracle or a validated real-robot estimator. Future random
+disturbance events are never supplied to the planner. At disturbance strength
+0.2, random peak limits are 30 N link force, 4 N m link torque and 6 N m joint
+torque; the actual sampled event schedule is saved with every run.
 
 ## Install and verify
 
