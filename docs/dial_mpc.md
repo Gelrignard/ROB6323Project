@@ -6,15 +6,38 @@ not an RL policy; it needs no trained checkpoint. This is not the upstream H1
 example, and successful walking/robustness must be established by the saved
 physical runs rather than inferred from the optimizer implementation.
 
-The saved [three-case demonstration](../mpc/assets/comparison.mp4) completed
-4 s of physical walking in calm, random-pulse and full configured vortex
-conditions, with 0.509/0.502/0.495 m forward travel respectively. The same
-controller configuration, initial state and seed were used. The random case
-reached 27.57 N injected link force, and the vortex reached 26.48 N integrated
-aerodynamic force. [Recorded results](../mpc/results/g1_demo.json) preserve
-the actual event schedule and metrics. These short single-seed successes do
-not establish a broad robustness benchmark. CPU planning averaged
-1.28-1.45 s per 0.02 s control interval.
+The current comparison treats all external impacts as **unknown to the
+controller**. Its only runtime input is robot time, generalized position and
+generalized velocity. Candidate rollouts contain no injected or aerodynamic
+loads. The controller can react to their observed effects on robot motion;
+it cannot read the force that caused that motion.
+
+The [unknown-disturbance comparison](../mpc/assets/unknown_disturbances/comparison.mp4)
+records three physical trials with identical initial state, seed 7 and
+controller settings. **Calm walking and the random-pulse trial completed;
+the full configured vortex caused failure after 2.40 s.**
+
+| Case | Executed / requested time | Forward travel | Planar velocity RMSE | Walking check |
+| --- | --- | --- | --- | --- |
+| Calm | 4.00 / 4.00 s | 0.502 m | 0.245 m/s | Passed |
+| Six random joint/link pulses | 4.00 / 4.00 s | 0.510 m | 0.230 m/s | Passed |
+| Full configured vortex | 2.40 / 4.00 s | 0.109 m | 0.880 m/s | **Failed** |
+
+In the wind trial, pelvis height reached 0.440 m and crossed the 0.45 m
+termination limit. The tilt limit was not crossed. Lateral drift was
+1.337 m and peak modeled aerodynamic force was 25.58 N. The failure belongs
+to this G1 adaptation, load-free prediction model and 64-sample/three-refinement
+planning configuration; it is not a general impossibility result for DIAL-MPC.
+The [recorded results](../mpc/results/g1_unknown_disturbances.json) preserve
+the actual metrics and event schedule. Mean planning time was 1.19-1.32 s
+per 0.02 s action interval. These are offline, single-seed demonstrations,
+not a broad robustness or real-time benchmark.
+
+The earlier [videos](../mpc/assets/comparison.mp4) and
+[result bundle](../mpc/results/g1_demo.json) are **historical privileged-load
+demonstrations**. Their planner could read the latest aerodynamic link
+wrenches. They remain useful records of that different experiment, but do
+not validate the current unknown-impact baseline.
 
 ## What the paper does
 
@@ -62,10 +85,11 @@ upstream revision and exact numerical differences.
 - Costs track CoM position/velocity, torso orientation, feet and joint pose,
   while penalizing residual actions, stance-foot slip and falling. These are
   G1 adaptation choices, not an assertion that the paper used this exact cost.
-- Planning state is copied from the actual plant. Candidate trajectories use
-  independent simulation data. Only the chosen joint targets are applied to
-  the real plant; its positions and velocities are never replaced by IK or
-  predicted states after initialization.
+- The runtime controller input is a `RobotObservation(time, qpos, qvel)`.
+  It reconstructs prediction state from those values using independent
+  simulation data. Only the chosen joint targets are applied to the real
+  plant; its positions and velocities are never replaced by IK or predicted
+  states after initialization.
 
 The official H1 “torque” path also samples position references and computes
 bounded PD torques. Our plant uses its native position-PD actuators, with
@@ -79,28 +103,44 @@ about to be executed to be optimized immediately. The optimizer also
 supports upstream's frozen-first-knot convention. Both real and planning
 paths apply physical actuator target limits, including spline overshoot.
 
-## Disturbance information and prediction
+## Strict unknown-disturbance interface
 
-Two planner modes are supported:
+The planner receives only `RobotObservation(time, qpos, qvel)` at each update.
+Its independent nominal model and fixed task/reference configuration are
+known; the physical environment object is not retained by the controller.
+The following simulator quantities are not controller inputs:
 
-| Setting | Prediction assumption |
-| --- | --- |
-| `wind_prediction="none"` | No aerodynamic load in candidate rollouts; feedback observes its effects through the current state. |
-| `wind_prediction="current_wrench"` | Hold the most recently measured aerodynamic force/torque on every body constant over the horizon. |
+- aerodynamic or injected force/torque measurements;
+- wind velocity, field parameters or access to the field provider;
+- random event schedules, targets, amplitudes or future event times;
+- plant solver acceleration warm starts or other solver-internal state.
 
-The second mode is explicitly privileged simulated load measurement. It is
-not a forecast of the wind field: actual surface drag changes with position,
-orientation and body velocity. Neither mode queries future random impulses,
-and neither has a future-event oracle. The plant applies aerodynamic and
-random loads at every 0.002 s physics step.
+Prediction starts with a zero solver warm start and zero external loads.
+The prior action sequence is still shifted and refined between MPC updates;
+this optimizer warm start is distinct from the excluded physics-solver
+warm start. The former `wind_prediction="current_wrench"` mode is removed;
+old configurations requesting it are rejected rather than silently granted
+force access.
+
+The physical plant still integrates surface drag and random loads at every
+0.002 s step. The experiment runner logs those loads, and the renderer uses
+them for drag visualization. Logging and drawing a force does not feed it
+to the planner. With unknown wind, the planner uses a mismatched load-free
+prediction model and corrects its actions after the robot state changes.
+
+`qpos` and `qvel` currently come from noiseless simulation state. They include
+floating-base pose and velocity, so this remains an ideal state-estimation
+assumption. A physical robot needs an estimator to supply those quantities.
+Unknown external loads do not imply that all state-estimation and sim-to-real
+issues have been solved.
 
 ## Run and inspect physical cases
 
 From the repository root with the existing project environment:
 
 ```powershell
-.\.venv\Scripts\python.exe -m mpc.run --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --disturbance-strength 0.2 --video --output mpc/outputs/comparison
-.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/comparison/calm mpc/outputs/comparison/random mpc/outputs/comparison/tornado --output mpc/outputs/comparison/comparison.mp4
+.\.venv\Scripts\python.exe -m mpc.run --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --video --output mpc/outputs/dial_g1_unknown
+.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/dial_g1_unknown/calm mpc/outputs/dial_g1_unknown/random mpc/outputs/dial_g1_unknown/tornado --output mpc/outputs/dial_g1_unknown/comparison.mp4
 ```
 
 Each case writes `summary.json`, `planner.json`, `trajectory.npz` and a model
@@ -112,7 +152,8 @@ forces only, with 50% robot opacity.
 Useful arguments are `--controller-config <JSON>`, `--seed`, `--wind-scale`
 (multiplies velocity), `--disturbance-strength` and `--surface-patches`.
 Controller settings include samples, horizon, refinement iterations, knot
-count, action scale, active actuators, cost weights and wind prediction.
+count, action scale, active actuators and cost weights. External load access
+is excluded by the observation interface, not selected as a tuning option.
 The random-case default uses 20% of the 150 N/20 N m/30 N m configured maxima;
 report the actual saved strengths/events rather than calling every run a
 large-disturbance test.
@@ -135,4 +176,5 @@ controller configuration and initial state. Keep failure cases. The surface
 pressure model is approximate and the terrain is currently flat; these runs
 do not establish CFD fidelity, rescue-terrain performance or sim-to-real
 transfer. Later comparison with RL must also match actuation and disclose
-full-state/current-wrench information advantages.
+the ideal full-state estimation used here. All external impacts remain
+unknown to this controller.

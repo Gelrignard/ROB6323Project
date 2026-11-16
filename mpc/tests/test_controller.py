@@ -7,6 +7,7 @@ import mujoco
 import numpy as np
 
 from mpc.controller import DIALController
+from mpc.observation import RobotObservation
 from sim_env.g1_physics import G1PhysicsEnv
 
 
@@ -15,6 +16,7 @@ class _RecordingRollout:
         self.original = original
 
     def rollout(self, model, data, initial, controls, **kwargs):
+        self.initial = initial.copy()
         self.controls = controls.copy()
         self.arguments = kwargs
         self.states, self.sensors = self.original.rollout(model, data, initial, controls, **kwargs)
@@ -34,6 +36,17 @@ class ControllerRolloutTests(unittest.TestCase):
         mujoco.mj_forward(env.model, env.data)
         with patch("mpc.controller.G1WalkingReference") as reference_type:
             reference_type.return_value.initial_qpos = env.profile.home_qpos.copy()
+            nominal = env.profile.home_ctrl.copy()
+            com = env.data.subtree_com[env.profile.root_body_id].copy()
+            feet = env.data.site_xpos[list(env.profile.sole_site_ids)].copy()
+            def fixed_reference(times):
+                length = len(times)
+                return {"joint_targets": np.tile(nominal, (length, 1)),
+                        "com": np.tile(com, (length, 1)),
+                        "com_velocity": np.zeros((length, 3)),
+                        "feet": np.tile(feet, (length, 1, 1)),
+                        "stance": np.ones((length, 2), dtype=bool)}
+            reference_type.return_value.batch.side_effect = fixed_reference
             controller = DIALController(env, {"samples": 2, "horizon_steps": 4,
                                              "knot_intervals": 2, "iterations": 1,
                                              "init_iterations": 1, "threads": 1,
@@ -49,8 +62,8 @@ class ControllerRolloutTests(unittest.TestCase):
             "joint_targets": np.tile(env.profile.home_ctrl, (h, 1)),
         }
         controller._joint_reference = np.tile(env.profile.home_ctrl, (h, 1))
-        controller._initial_state = np.zeros(mujoco.mj_stateSize(env.model, mujoco.mjtState.mjSTATE_FULLPHYSICS))
-        mujoco.mj_getState(env.model, env.data, controller._initial_state, mujoco.mjtState.mjSTATE_FULLPHYSICS)
+        controller._initial_state = np.concatenate(([env.data.time], env.data.qpos, env.data.qvel))
+        env.data.qacc_warmstart[:] = 0.
         self.addCleanup(controller.close)
         return env, controller
 
@@ -76,36 +89,63 @@ class ControllerRolloutTests(unittest.TestCase):
             predicted = controller.rollout.states[0, (index + 1) * env.substeps - 1]
             np.testing.assert_allclose(predicted, actual, rtol=1e-8, atol=1e-9)
 
-    def test_current_wrench_is_repeated_and_future_disturbances_are_not_read(self):
-        env, controller = self.make_controller(wind_prediction="current_wrench")
-        body = env.profile.torso_body_id
-        env.last_body_wind_forces[body] = [3., -2., .5]
-        env.last_body_wind_torques[body] = [.1, -.2, .3]
-        wrench = np.concatenate((env.last_body_wind_forces, env.last_body_wind_torques), axis=-1)
-        n = controller.dial_config.horizon_steps
-        candidates = np.zeros((1, n + 1, len(controller.active)))
-        def oracle(_):
-            raise AssertionError("Planner must not query future disturbance events")
-        env.disturbance_callback = oracle
-        controller._rollout_cost(candidates)
-        expected = np.broadcast_to(wrench.reshape(-1), controller.rollout.controls[..., env.model.nu:].shape)
-        np.testing.assert_array_equal(controller.rollout.controls[..., env.model.nu:], expected)
-        self.assertTrue(controller.rollout.arguments["control_spec"] & int(mujoco.mjtState.mjSTATE_XFRC_APPLIED))
+    def test_actions_ignore_external_force_fields_schedule_and_solver_warmstart(self):
+        env, controller = self.make_controller()
+        observation = RobotObservation.from_data(env.data)
+        controller.reset(seed=19)
+        expected = controller.act(observation)
+        expected_controls = controller.rollout.controls.copy()
+        expected_states = controller.rollout.states.copy()
 
-        # Compare against a plant with this same constant current wrench. This
-        # is a parity test of the planner's documented zero-order load hold,
-        # not a claim to forecast changing aerodynamic forces exactly.
-        env.disturbance_callback = None
-        def constant_wind():
-            mujoco.mj_forward(env.model, env.data)
-            env.data.xfrc_applied[:] = wrench
-        with patch.object(env, "_apply_wind", side_effect=constant_wind):
-            for index in range(n):
-                env.step_joint_targets(env.profile.home_ctrl)
-                actual = np.zeros_like(controller._initial_state)
-                mujoco.mj_getState(env.model, env.data, actual, mujoco.mjtState.mjSTATE_FULLPHYSICS)
-                predicted = controller.rollout.states[0, (index + 1) * env.substeps - 1]
-                np.testing.assert_allclose(predicted, actual, rtol=1e-8, atol=1e-9)
+        # Change every external-load source while keeping the permitted robot
+        # observation fixed. A force-aware planner or a solver-warmstart leak
+        # would change the answer or encounter these deliberately invalid data.
+        env.last_body_wind_forces[:] = 1e6
+        env.last_body_wind_torques[:] = -1e6
+        env.last_disturbance_body_forces[:] = -2e6
+        env.last_disturbance_body_torques[:] = 2e6
+        env.last_disturbance_joint_torques[:] = 3e6
+        env.data.xfrc_applied[:] = 4e6
+        env.data.qfrc_applied[:] = -4e6
+        env.data.qacc_warmstart[:] = np.nan
+        def forbidden_oracle(*args):
+            raise AssertionError("Controller must not access wind or disturbance oracles")
+        env.wind_field = env.disturbance_callback = forbidden_oracle
+        for data in controller.data:
+            data.xfrc_applied[:] = 8e6
+            data.qfrc_applied[:] = -8e6
+            data.qacc_warmstart[:] = np.nan
+        controller.reset(seed=19)
+        actual = controller.act(observation)
+        np.testing.assert_array_equal(actual, expected)
+        np.testing.assert_array_equal(controller.rollout.controls, expected_controls)
+        np.testing.assert_array_equal(controller.rollout.states, expected_states)
+        np.testing.assert_array_equal(controller.rollout.arguments["initial_warmstart"],
+                                      np.zeros((1, env.model.nv)))
+        self.assertEqual(controller.rollout.arguments["control_spec"], int(mujoco.mjtState.mjSTATE_CTRL))
+        self.assertEqual(controller.rollout.controls.shape[-1], env.model.nu)
+        self.assertFalse(hasattr(controller, "env"))
+
+    def test_observation_copies_only_time_qpos_and_qvel(self):
+        env, _ = self.make_controller()
+        class RestrictedData:
+            time = env.data.time
+            qpos = env.data.qpos.copy()
+            qvel = env.data.qvel.copy()
+            def __getattr__(self, name):
+                raise AssertionError(f"Unexpected privileged data read: {name}")
+        data = RestrictedData()
+        observation = RobotObservation.from_data(data)
+        expected_qpos, expected_qvel = data.qpos.copy(), data.qvel.copy()
+        data.qpos[:] = 900.
+        data.qvel[:] = -900.
+        np.testing.assert_array_equal(observation.qpos, expected_qpos)
+        np.testing.assert_array_equal(observation.qvel, expected_qvel)
+        self.assertEqual(observation.time, data.time)
+
+    def test_force_aware_mode_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self.make_controller(wind_prediction="current_wrench")
 
     def test_decoded_controls_obey_same_physical_actuator_clipping(self):
         env, controller = self.make_controller(action_scale=10.)

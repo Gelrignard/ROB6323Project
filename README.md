@@ -20,46 +20,65 @@ Selecting and fine-tuning an RL walking policy remains a separate experiment.
 - **DIAL-MPC is implemented in `mpc/`.** It uses dual annealing, native
   full-order MuJoCo rollouts, and a G1-specific gait objective. The CPU
   demonstration runs synchronously offline; it does not claim real-time
-  performance. [Method and port details](docs/dial_mpc.md).
+  performance. Its runtime input is only robot time, position and velocity;
+  external impacts are unknown to the planner. [Method and port details](docs/dial_mpc.md).
 
 The earlier [policy-selection notes](docs/policy_selection.md) document
 candidate frameworks; no checkpoint choice is final. Current terrain is flat.
 Neither rough-terrain performance nor hardware transfer has been established.
 The [experiment protocol](docs/experiment_protocol.md) separates the required
 PPO comparison, optional ablations and later research claims.
-See [validation results](docs/validation.md) for the earlier RL integration
-checks. The expanded suite now passes 90 tests, including DIAL optimizer,
-full-dynamics prediction parity, gait references and physical recording.
+The full suite passes **92 tests**, including a regression that changes or
+invalidates force, field, event and solver-warm-start data while holding the
+allowed observation fixed. See [validation results](docs/validation.md).
 
-## DIAL-MPC physical walking demonstrations
+## DIAL-MPC with unknown external impacts
 
-[Watch the three-case comparison](mpc/assets/comparison.mp4).
-Individual videos: [calm](mpc/assets/calm.mp4),
-[random disturbances](mpc/assets/random_disturbances.mp4),
-[wind field](mpc/assets/wind_field.mp4).
+The controller receives `RobotObservation(time, qpos, qvel)` and predicts
+with a load-free nominal model. It does not receive aerodynamic or injected
+forces, wind-field data, event schedules, or the plant solver's internal
+warm-start state. The controller stores no reference to the environment.
+It responds to disturbances through their effects on the observed motion.
 
-![Physical G1 DIAL-MPC comparison](mpc/assets/comparison.png)
+**Calm walking and the random-pulse trial completed; the full-strength wind
+trial failed after 2.40 s.** All three use the same initial state, seed 7,
+controller settings and unknown-load observation interface.
 
-Measured with the same controller, initial state and seed (7):
+[Watch the unknown-disturbance comparison](mpc/assets/unknown_disturbances/comparison.mp4).
+Individual videos: [calm](mpc/assets/unknown_disturbances/calm.mp4),
+[random disturbances](mpc/assets/unknown_disturbances/random_disturbances.mp4),
+[wind field, including the failure](mpc/assets/unknown_disturbances/wind_field.mp4).
 
-| Case | Duration | Forward travel | Walking check |
-| --- | --- | --- | --- |
-| Calm | 4 s | 0.509 m | Passed |
-| Six random joint/link pulses | 4 s | 0.502 m | Passed |
-| Full configured vortex | 4 s | 0.495 m | Passed |
+![Physical G1 DIAL-MPC with unknown external impacts](mpc/assets/unknown_disturbances/comparison.png)
 
-Peak injected link force was 27.57 N; peak modeled aerodynamic resultant in
-the vortex was 26.48 N. These are short single-seed demonstrations. Planning
-took approximately 1.28-1.45 s per 0.02 s control interval, so the videos play
-simulated time rather than wall time. [Machine-readable results](mpc/results/g1_demo.json)
-include configurations, event schedules, foot contacts, errors and timing.
+| Case | Executed / requested time | Forward travel | Planar velocity RMSE | Walking check |
+| --- | --- | --- | --- | --- |
+| Calm | 4.00 / 4.00 s | 0.502 m | 0.245 m/s | Passed |
+| Six random joint/link pulses | 4.00 / 4.00 s | 0.510 m | 0.230 m/s | Passed |
+| Full configured vortex | 2.40 / 4.00 s | 0.109 m | 0.880 m/s | **Failed** |
+
+The wind case drifted laterally by 1.337 m and terminated when pelvis height
+fell to 0.440 m, below the 0.45 m limit. The tilt threshold was not the trigger.
+Peak modeled aerodynamic force was 25.58 N. This is a failure of this G1
+configuration and planning budget on this trial, not evidence that DIAL-MPC
+generally cannot handle wind. The other two short single-seed successes do
+not establish a broad robustness benchmark. The
+[result bundle](mpc/results/g1_unknown_disturbances.json) preserves exact
+metrics, settings and events. Mean CPU planning times were 1.19-1.32 s per
+0.02 s control interval; these demonstrations are not real-time control.
+
+The earlier [comparison video](mpc/assets/comparison.mp4) and
+[results](mpc/results/g1_demo.json) are **historical privileged-load
+demonstrations**: the planner could read the current aerodynamic link
+wrenches. Their successful short trials must not be presented as evidence
+for unknown external impacts.
 
 The DIAL code uses only `requirements.txt`; no Torch, JAX or RL checkpoint is
 needed. After installing those dependencies, run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m mpc --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --output mpc/outputs/demo --video
-.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/demo/calm mpc/outputs/demo/random mpc/outputs/demo/tornado --output mpc/outputs/demo/comparison.mp4
+.\.venv\Scripts\python.exe -m mpc --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --output mpc/outputs/dial_g1_unknown --video
+.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/dial_g1_unknown/calm mpc/outputs/dial_g1_unknown/random mpc/outputs/dial_g1_unknown/tornado --output mpc/outputs/dial_g1_unknown/comparison.mp4
 ```
 
 Allow several minutes per case on a CPU. `--video` renders the actual
@@ -75,12 +94,18 @@ targets hold their reference posture. The prior is never imposed on the
 physical state. This is an explicit G1 adaptation of the paper's optimizer,
 not a reproduction of the upstream H1 benchmark or a kinematic walking replay.
 
-`wind_prediction="current_wrench"` holds the currently available aerodynamic
-link wrenches constant during prediction. This is ideal current-load access,
-not a future-wind oracle or a validated real-robot estimator. Future random
-disturbance events are never supplied to the planner. At disturbance strength
-0.2, random peak limits are 30 N link force, 4 N m link torque and 6 N m joint
-torque; the actual sampled event schedule is saved with every run.
+The former `wind_prediction="current_wrench"` mode is removed; old configs
+requesting privileged load access are rejected. Physical surface drag and
+random loads remain active, and their logs/visualizations are kept outside
+the controller. At disturbance strength 0.2, random peak limits are 30 N
+link force, 4 N m link torque and 6 N m joint torque; the actual sampled event
+schedule is saved with every run.
+
+Robot pose and velocity currently come from noiseless simulation state,
+including floating-base pose/velocity. This is still an ideal state-estimator
+assumption. A real robot needs an estimator; removing wind/force access does
+not establish sim-to-real transfer. Videos show simulated time, with the
+physical clock paused while the CPU planner computes each action.
 
 ## Install and verify
 
@@ -238,6 +263,7 @@ method are preserved in [legacy simulation notes](docs/legacy_simulation.md).
 | `sim_env/disturbances.py` | Reproducible joint/link perturbations |
 | `sim_env/wind_fields.py`, `surface_drag.py` | Wind and distributed loads |
 | `sim_env/visualize/` | Existing drag-only rendering tools |
+| `mpc/` | DIAL-MPC controller, strict robot-state observation, physical demonstrations |
 | `rl/` | PPO, checkpoint contracts, paired evaluation |
 | `docs/` | Policy selection and baseline integration |
 | `lqr/` | Preserved reduced-model homework experiment; outside current comparison |
@@ -245,5 +271,5 @@ method are preserved in [legacy simulation notes](docs/legacy_simulation.md).
 G1 assets and upstream license are vendored from
 [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie/tree/370c43965323c0944b433b202aac5058b5f907a9/unitree_g1).
 `sim_env/models/unitree_g1/ASSET_MANIFEST.json` records source hashes.
-Generated runs, logs, videos and checkpoints are ignored by Git. Required
-robot assets and proposal figures are included.
+Raw generated runs, logs and checkpoints are ignored by Git. Required robot
+assets, proposal figures, and selected demonstration videos/results are included.

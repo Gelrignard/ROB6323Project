@@ -33,22 +33,47 @@ def _font(size):
     return ImageFont.load_default()
 
 
+def controller_information_label(summary):
+    """Describe recorded access without retroactively certifying old runs.
+
+    The historical current-wrench option supplied measured aerodynamic loads
+    to the predictor. A legacy wind_prediction='none' is not enough to certify
+    the new strict observation boundary, since the old controller also read
+    solver state directly from the live plant.
+    """
+    metadata = summary.get("controller_metadata") or {}
+    config = summary.get("controller_config") or {}
+    prediction = metadata.get("wind_prediction", config.get("wind_prediction"))
+    access = metadata.get("external_load_access")
+    if prediction == "current_wrench" or access in ("current_wrench", "known", "known_field", "current_measurement"):
+        return "Known aerodynamic loads (privileged)"
+    observation = metadata.get("observation", metadata.get("observation_fields"))
+    if isinstance(observation, str):
+        observation = observation.replace(" ", "").split(",")
+    if observation in (["time", "qpos", "qvel"], ("time", "qpos", "qvel")) and access == "none":
+        return "State feedback only; external loads unknown"
+    if prediction == "none":
+        return "No wind prediction; legacy inputs not certified"
+    return "Controller inputs not recorded (historical run)"
+
+
 def _panel(frame, row, records, index, summary, arrows):
     background, text, muted, coral = (12, 25, 38), (235, 243, 248), (153, 175, 192), (255, 126, 97)
     panel = Image.new("RGB", (480, 720), background)
     draw = ImageDraw.Draw(panel)
     force = row["drag_force"]
     draw.text((24, 18), summary.get("controller", "DIAL-MPC / G1")[:29], font=_font(24), fill=text)
-    draw.text((24, 60), f"{summary['scenario'].upper()}   t = {row['time']:.2f} s", font=_font(23), fill=muted)
-    draw.text((24, 104), f"Forward travel: {row['progress']:+.3f} m", font=_font(22), fill=text)
-    draw.text((24, 139), f"Command: {summary['command_speed_mps']:.2f} m/s", font=_font(18), fill=muted)
+    draw.text((24, 55), f"{summary['scenario'].upper()}   t = {row['time']:.2f} s", font=_font(23), fill=muted)
+    draw.text((24, 91), controller_information_label(summary), font=_font(15), fill=text)
+    draw.text((24, 122), f"Forward travel: {row['progress']:+.3f} m", font=_font(22), fill=text)
+    draw.text((24, 154), f"Command: {summary['command_speed_mps']:.2f} m/s", font=_font(18), fill=muted)
     for x, foot, contact in zip((24, 240), ("LEFT FOOT", "RIGHT FOOT"), row["contact"]):
-        draw.text((x, 178), foot, font=_font(16), fill=muted)
-        draw.text((x, 201), "CONTACT" if contact else "AIRBORNE", font=_font(20),
+        draw.text((x, 190), foot, font=_font(16), fill=muted)
+        draw.text((x, 213), "CONTACT" if contact else "AIRBORNE", font=_font(20),
                   fill=(102, 225, 157) if contact else (255, 206, 84))
-    draw.text((24, 251), "AERODYNAMIC DRAG ONLY", font=_font(21), fill=text)
-    draw.text((24, 289), f"|F| = {np.linalg.norm(force):.2f} N", font=_font(27), fill=coral)
-    draw.text((24, 332), f"Fx {force[0]:+.2f}   Fy {force[1]:+.2f}   Fz {force[2]:+.2f}",
+    draw.text((24, 258), "AERODYNAMIC DRAG ONLY", font=_font(21), fill=text)
+    draw.text((24, 297), f"|F| = {np.linalg.norm(force):.2f} N", font=_font(27), fill=coral)
+    draw.text((24, 337), f"Fx {force[0]:+.2f}   Fy {force[1]:+.2f}   Fz {force[2]:+.2f}",
               font=_font(18), fill=text)
     times = np.array([r["time"] for r in records])
     magnitudes = np.linalg.norm([r["drag_force"] for r in records], axis=1)
@@ -70,8 +95,8 @@ def _panel(frame, row, records, index, summary, arrows):
         draw.text((24, 579), ", ".join(row["active_events"])[:47], font=_font(15), fill=muted)
     else:
         draw.text((24, 550), "No injected pulse at this instant", font=_font(17), fill=muted)
-    draw.text((24, 616), "Robot opacity 50%; drag vectors opaque", font=_font(16), fill=muted)
-    draw.text((24, 644), f"Resultant arrow scale {arrows.arrow_scale:.3g} m/N", font=_font(15), fill=muted)
+    draw.text((24, 610), "Drag vectors: visualization only", font=_font(17), fill=text)
+    draw.text((24, 640), f"Robot opacity 50%; resultant {arrows.arrow_scale:.3g} m/N", font=_font(14), fill=muted)
     draw.text((24, 675), "Synchronous CPU planning; video in sim time", font=_font(15), fill=muted)
     scene = Image.fromarray(frame)
     scene_draw = ImageDraw.Draw(scene)
@@ -161,6 +186,11 @@ def render_run(directory, output=None, fps=25):
             "drag_model": "same surface quadrature re-evaluated at saved physical states",
             "scope": "actual integrated trajectory; state replay occurs only for rendering",
             "force_arrows": "aerodynamic drag only; injected pulses are separately captioned",
+            "controller_information_label": controller_information_label(summary),
+            "controller_metadata": summary.get("controller_metadata"),
+            "controller_config": summary.get("controller_config"),
+            "wind_field": summary.get("wind_field"), "wind_scale": summary.get("wind_scale"),
+            "wind_config": summary.get("wind_config"),
             "failure_reason": summary.get("failure_reason"), "walking_success": summary.get("walking_success")}
     output.with_suffix(".render.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
     print(json.dumps(info, indent=2), flush=True)

@@ -13,7 +13,7 @@ import imageio.v2 as imageio
 import numpy as np
 from PIL import Image, ImageDraw
 
-from .render import _font, render_run
+from .render import _font, controller_information_label, render_run
 
 
 BACKGROUND = (12, 25, 38)
@@ -90,17 +90,18 @@ def _tile(source, time_s):
     else:
         exposure = "Calm air; no injected disturbances"
     draw.text((20, 44), exposure, font=_font(18), fill=MUTED)
+    draw.text((20, 76), controller_information_label(summary), font=_font(17), fill=TEXT)
     # Our source render is a960px-wide scene plus a480px quantitative panel.
     # Crop its scene, remove its duplicate caption, preserve aspect ratio.
     scene = Image.fromarray(frame).crop((0, 72, min(frame.shape[1], 960), 720))
-    scene = scene.resize((720, 486), Image.Resampling.LANCZOS)
-    tile.paste(scene, (0, 76))
+    scene = scene.resize((674, 455), Image.Resampling.LANCZOS)
+    tile.paste(scene, (23, 102))
     draw = ImageDraw.Draw(tile)
     failure = summary.get("failure_reason")
     if row["ended"]:
         message = "FAILED - FINAL FRAME HELD" if failure else "ENDED - FINAL FRAME HELD"
-        draw.rectangle((0, 282, 720, 354), fill=BACKGROUND)
-        draw.text((360, 300), message, font=_font(27), fill=FAILURE if failure else TEXT, anchor="mt")
+        draw.rectangle((0, 112, 720, 166), fill=BACKGROUND)
+        draw.text((360, 124), message, font=_font(27), fill=FAILURE if failure else TEXT, anchor="mt")
     draw.text((20, 574), f"t={row['time']:.2f} s   forward={row['progress']:+.3f} m   drag={row['drag']:.2f} N",
               font=_font(20), fill=TEXT)
     contacts = " / ".join("contact" if value else "airborne" for value in row["contact"])
@@ -138,6 +139,7 @@ def compare_runs(directories, output, fps=25):
             canvas = Image.new("RGB", (2160, 800), BACKGROUND)
             draw = ImageDraw.Draw(canvas)
             draw.text((24, 12), "G1 DIAL-MPC  |  THREE PHYSICAL ROLLOUTS", font=_font(30), fill=TEXT)
+            draw.text((24, 48), "Drag vectors: visualization only", font=_font(16), fill=MUTED)
             draw.text((2134, 22), f"SIM TIME {time_s:.2f} s   |   offline CPU planning", font=_font(22), fill=MUTED, anchor="rt")
             for column, source in enumerate(sources):
                 canvas.paste(_tile(source, time_s), (column * 720, 72))
@@ -151,6 +153,11 @@ def compare_runs(directories, output, fps=25):
         metadata = {"runs": [{"directory": str(source.directory.resolve()),
                                "scenario": source.summary["scenario"], "duration_s": source.end,
                                "wind_scale": source.summary.get("wind_scale"),
+                               "wind_field": source.summary.get("wind_field"),
+                               "wind_config": source.summary.get("wind_config"),
+                               "controller_metadata": source.summary.get("controller_metadata"),
+                               "controller_config": source.summary.get("controller_config"),
+                               "controller_information_label": controller_information_label(source.summary),
                                "disturbance_strength": (source.summary.get("disturbances") or {}).get("strength"),
                                "walking_success": source.summary.get("walking_success"),
                                "failure_reason": source.summary.get("failure_reason")}

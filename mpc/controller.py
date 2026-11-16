@@ -2,6 +2,7 @@
 
 This is an offline CPU port, with G1-specific motion objectives and a
 kinematic warm-start prior. Only the real plant's actuators move the robot.
+External loads are unknown: runtime feedback is limited to time/pose/velocity.
 """
 
 import time
@@ -13,13 +14,18 @@ import mujoco.rollout
 from sim_env.g1_model import load_g1_model
 from .reference import G1WalkingReference
 from .dial import DialConfig, DIALOptimizer
+from .observation import RobotObservation
 
 
 class DIALController:
     def __init__(self, env, config=None):
-        self.env = env
         self.config = dict(config or {})
         c = self.config
+        self.wind_prediction = c.setdefault("wind_prediction", "none")
+        if self.wind_prediction != "none":
+            raise ValueError("DIAL-MPC tests unknown external loads; wind_prediction must be 'none'. "
+                             "Privileged current_wrench input is no longer supported.")
+        self.control_dt, self.physics_dt, self.substeps = env.control_dt, env.physics_dt, env.substeps
         self.command_speed = float(c.get("speed", .18))
         self.reference = G1WalkingReference(duration=float(c.get("duration", 6.)),
             speed=self.command_speed, sample_dt=env.control_dt,
@@ -31,6 +37,8 @@ class DIALController:
             double_support_fraction=float(c.get("double_support_fraction", .3)))
         self.initial_qpos = self.reference.initial_qpos.copy()
         self.model = load_g1_model(mpc_sensors=True)
+        if self.model.na or self.model.npluginstate:
+            raise ValueError("The state-only G1 controller requires no actuator activation or plugin state")
         self.model.opt.timestep = env.physics_dt
         # Explicitly reproduce the plant's actuator and dynamics parameters.
         for name in ("body_mass", "body_inertia", "geom_friction", "dof_damping",
@@ -39,14 +47,12 @@ class DIALController:
         self.nthread = max(1, min(int(c.get("threads", 8)), os.cpu_count() or 1))
         self.data = [mujoco.MjData(self.model) for _ in range(self.nthread)]
         mujoco.mj_setConst(self.model, self.data[0])
+        self._observation_data = mujoco.MjData(self.model)
         self.rollout = mujoco.rollout.Rollout(nthread=self.nthread)
         self.active = np.asarray(c.get("active_actuators", list(range(12))), dtype=int)
         if len(set(self.active)) != len(self.active) or np.any(self.active < 0) or np.any(self.active >= self.model.nu):
             raise ValueError("active_actuators must be distinct valid actuator indices")
         self.action_scale = float(c.get("action_scale", .2))
-        self.wind_prediction = c.get("wind_prediction", "none")
-        if self.wind_prediction not in ("none", "current_wrench"):
-            raise ValueError("wind_prediction must be none or current_wrench")
         self.dial_config = DialConfig(samples=int(c.get("samples", 64)),
             horizon_steps=int(c.get("horizon_steps", 20)),
             knot_intervals=int(c.get("knot_intervals", 5)),
@@ -79,19 +85,15 @@ class DIALController:
         targets = np.broadcast_to(base, (n, horizon, self.model.nu)).copy()
         targets[:, :, self.active] += self.action_scale * candidates[:, :horizon]
         targets = np.clip(targets, self.model.actuator_ctrlrange[:, 0], self.model.actuator_ctrlrange[:, 1])
-        controls = np.repeat(targets, self.env.substeps, axis=1)
+        controls = np.repeat(targets, self.substeps, axis=1)
         control_spec = int(mujoco.mjtState.mjSTATE_CTRL)
-        if self.wind_prediction == "current_wrench":
-            wrench = np.concatenate((self.env.last_body_wind_forces, self.env.last_body_wind_torques), axis=-1).reshape(-1)
-            controls = np.concatenate((controls, np.broadcast_to(wrench, (*controls.shape[:2], len(wrench)))), axis=-1)
-            control_spec |= int(mujoco.mjtState.mjSTATE_XFRC_APPLIED)
         states, sensors = self.rollout.rollout(self.model, self.data, self._initial_state[None], controls,
                                               control_spec=control_spec,
-                                              initial_warmstart=self.env.data.qacc_warmstart[None])
+                                              initial_warmstart=np.zeros((1, self.model.nv)))
         # MuJoCo position sensors describe the integration interval start.
         # Select one per control interval and compare with the matching reference.
-        y = sensors[:, ::self.env.substeps]
-        s = states[:, self.env.substeps - 1::self.env.substeps]
+        y = sensors[:, ::self.substeps]
+        s = states[:, self.substeps - 1::self.substeps]
         ref = self._cost_reference
         w = self.weights
         com = y[..., self.sensor_slices["com"]]
@@ -118,15 +120,28 @@ class DIALController:
         result[divergent] = 1e8
         return np.nan_to_num(result, nan=1e8, posinf=1e8, neginf=1e8)
 
-    def act(self):
+    def act(self, observation: RobotObservation):
         started = time.perf_counter()
-        t = float(self.env.data.time)
-        future = t + np.arange(self.dial_config.horizon_steps + 1) * self.env.control_dt
+        if not isinstance(observation, RobotObservation):
+            raise TypeError("act requires RobotObservation(time, qpos, qvel)")
+        t = float(observation.time)
+        qpos, qvel = np.asarray(observation.qpos), np.asarray(observation.qvel)
+        if (not np.isfinite(t) or t < 0 or qpos.shape != (self.model.nq,)
+                or qvel.shape != (self.model.nv,) or not np.all(np.isfinite(qpos))
+                or not np.all(np.isfinite(qvel))):
+            raise ValueError("Robot observation must have finite time and correctly shaped finite qpos/qvel")
+        future = t + np.arange(self.dial_config.horizon_steps + 1) * self.control_dt
         self._reference_controls = self.reference.batch(future)["joint_targets"]
         self._cost_reference = self.reference.batch(future[:-1])
         self._joint_reference = self._reference_controls[1:]
-        self._initial_state = np.zeros(mujoco.mj_stateSize(self.env.model, mujoco.mjtState.mjSTATE_FULLPHYSICS))
-        mujoco.mj_getState(self.env.model, self.env.data, self._initial_state, mujoco.mjtState.mjSTATE_FULLPHYSICS)
+        # Build the state from the explicit observation, never from plant
+        # force arrays, acceleration, contact forces or solver warm-start.
+        mujoco.mj_resetData(self.model, self._observation_data)
+        self._observation_data.time = t
+        self._observation_data.qpos[:] = qpos
+        self._observation_data.qvel[:] = qvel
+        self._initial_state = np.zeros(mujoco.mj_stateSize(self.model, mujoco.mjtState.mjSTATE_FULLPHYSICS))
+        mujoco.mj_getState(self.model, self._observation_data, self._initial_state, mujoco.mjtState.mjSTATE_FULLPHYSICS)
         if not self._first:
             self.nodes = self.optimizer.shift(self.nodes, tail_action=np.zeros(len(self.active)))
         count = self.dial_config.init_iterations if self._first else self.dial_config.iterations
@@ -137,7 +152,7 @@ class DIALController:
         target[self.active] += self.action_scale * result.controls[0]
         self.last_plan_info = {"planning_s": time.perf_counter() - started,
                                "samples": self.dial_config.samples, "iterations": count,
-                               "horizon_s": self.dial_config.horizon_steps * self.env.control_dt,
+                               "horizon_s": self.dial_config.horizon_steps * self.control_dt,
                                "diagnostics": result.diagnostics}
         return np.clip(target, self.model.actuator_ctrlrange[:, 0], self.model.actuator_ctrlrange[:, 1])
 
@@ -146,6 +161,9 @@ class DIALController:
                 "plant": "full floating-base/contact MuJoCo dynamics with position-PD actuators",
                 "active_actuators": self.active.tolist(), "reference": self.reference.metadata(),
                 "wind_prediction": self.wind_prediction,
+                "observation": "time,qpos,qvel", "external_load_access": "none",
+                "solver_warmstart": "zero; never copied from plant",
+                "state_estimation": "ideal simulator pose/velocity; hardware requires an estimator",
                 "future_random_disturbance_access": False, "real_time_claim": False}
 
     def close(self):

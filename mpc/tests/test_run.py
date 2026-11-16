@@ -20,7 +20,7 @@ class DiagnosticController:
     def __init__(self, env):
         self.env = env
 
-    def act(self):
+    def act(self, observation):
         return self.env.profile.home_ctrl.copy()
 
 
@@ -49,7 +49,7 @@ class RecorderTests(unittest.TestCase):
     def test_bad_controller_retains_failure_and_does_not_overwrite_results(self):
         env = G1PhysicsEnv(drag_model="none", record_wind_history=True)
         controller = DiagnosticController(env)
-        controller.act = lambda: np.full(env.model.nu, np.nan)
+        controller.act = lambda observation: np.full(env.model.nu, np.nan)
         with tempfile.TemporaryDirectory() as folder:
             destination = Path(folder) / "run"
             result = run_episode(env, controller, duration=.1, output=destination, scenario="calm", seed=7)

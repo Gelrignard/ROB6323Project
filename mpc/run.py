@@ -16,6 +16,7 @@ import numpy as np
 from sim_env.disturbances import DisturbanceConfig, DisturbanceScheduler
 from sim_env.g1_physics import G1PhysicsEnv
 from sim_env.wind_fields import WindFieldConfig, make_wind_field
+from .observation import RobotObservation
 
 
 CASES = ("calm", "random", "tornado")
@@ -63,7 +64,7 @@ def run_episode(env, controller, *, duration, output, scenario, seed,
     for step in range(count):
         plan_start = time.perf_counter()
         try:
-            targets = np.asarray(controller.act(), dtype=float)
+            targets = np.asarray(controller.act(RobotObservation.from_data(env.data)), dtype=float)
             if targets.shape != (env.model.nu,) or not np.all(np.isfinite(targets)):
                 raise ValueError("Controller returned invalid joint-position targets")
             # G1PhysicsEnv clips to hardware position bounds. The planner must
