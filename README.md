@@ -24,6 +24,29 @@ published copies linked below remain in `mpc/assets/`.
 New `python -m mpc --video` runs default to `outputs/dial_mpc/demo/`, with
 each case's video at `<case>/walking.mp4` alongside its states and logs.
 
+The local four-case video is
+`outputs/dial_mpc/unknown_disturbances/comparison_2x2.mp4`, ordered as calm,
+random impacts, large impacts, and wind field. Its numerical results are in
+`comparison_2x2_results.json` in the same folder. These generated files stay
+Git-ignored. The large-impact source run is under
+`outputs/dial_mpc/large_impacts/random/`.
+
+The large trial uses the same seed, controller, initial state, event times,
+targets and directions as the earlier random trial, with pulse amplitudes
+multiplied by five (`--disturbance-strength 1.0` versus `0.2`). Its actual
+peak link force was 137.835 N, and it terminated at 3.40 s after crossing
+both pelvis-height and tilt limits. It did not pass the walking check.
+The other three trajectories are reused; they were not rerun or retuned.
+
+**What the arrows mean:** they show aerodynamic surface drag, not injected
+impacts. Calm air still produces small drag on moving limbs because relative
+air velocity is `wind_velocity - surface_velocity`; the calm trial's peak
+total drag is 0.042 N. Local arrows are scaled independently for each clip,
+so their lengths should not be compared between cases. Random impacts are
+finite-duration forces/torques at selected link centers of mass or hinge
+joint torques, not surface collisions. The 2x2 video reports their recorded
+target and magnitude separately in text.
+
 ## Current status
 
 - Actual floating-base **Unitree G1, 29 actuators**, MuJoCo contacts and a
@@ -99,6 +122,19 @@ needed. After installing those dependencies, run:
 .\.venv\Scripts\python.exe -m mpc --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --output outputs/dial_mpc/new_run --video
 .\.venv\Scripts\python.exe -m mpc.compare outputs/dial_mpc/new_run/calm outputs/dial_mpc/new_run/random outputs/dial_mpc/new_run/tornado --output outputs/dial_mpc/new_run/comparison.mp4
 ```
+
+Add the fivefold-impact condition and assemble a 2x2 comparison (use new
+output folders if those paths already contain results):
+
+```powershell
+.\.venv\Scripts\python.exe -m mpc --cases random --duration 4 --seed 7 --controller-config mpc/configs/g1_demo.json --disturbance-strength 1.0 --output outputs/dial_mpc/large_run --video
+.\.venv\Scripts\python.exe -m mpc.compare outputs/dial_mpc/new_run/calm outputs/dial_mpc/new_run/random outputs/dial_mpc/large_run/random outputs/dial_mpc/new_run/tornado --labels "Calm" "Random impacts" "Large impacts" "Wind field" --output outputs/dial_mpc/new_run/comparison_2x2.mp4
+```
+
+The runner returns exit status 1 when an episode terminates early; it still
+saves that failure and renders it with `--video`. Comparison videos hold
+the actual final frame after termination and do not invent later motion or
+scheduled impacts.
 
 Allow several minutes per case on a CPU. `--video` renders the actual
 integrated trajectory with 50% robot opacity and aerodynamic drag vectors.

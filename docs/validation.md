@@ -38,6 +38,33 @@ the new outcomes, including the wind failure. Mean planning times were
 This short, single-seed failure is evidence about the tested G1 configuration
 and planning budget, not a general failure claim about the DIAL-MPC method.
 
+## Additional large-impact condition
+
+The unchanged controller was run once more at seed 7 for a requested 4 s,
+with disturbance strength 1.0 instead of 0.2. Event times, kinds, targets,
+durations and directions match; every prescribed amplitude is fivefold.
+The recorded positions, velocities and actions before the first impact
+match the smaller-impact trial bit for bit.
+
+The large trial terminated at **3.40 s**, with pelvis height 0.431 m and
+upright cosine 0.403, crossing both thresholds (0.45 m and 0.5). Forward
+displacement was 1.954 m, lateral drift -0.807 m, and planar velocity RMSE
+0.871 m/s; the large displacement is not evidence of successful walking.
+Actual recorded peak injected loads were 137.835 N link force, 15.609 N m
+link torque and 17.267 N m joint torque. The last joint-torque pulse was
+cut short by termination, so its prescribed full-pulse peak was not reached.
+
+Raw data and video are in `outputs/dial_mpc/large_impacts/random/`.
+The four-case comparison and results are under
+`outputs/dial_mpc/unknown_disturbances/comparison_2x2*`; all remain Git-ignored.
+The previous calm, smaller-impact and wind trajectories are reused.
+Arrows remain aerodynamic only and are scaled per source clip. Recorded
+impact targets and magnitudes are shown separately; failed runs retain their
+actual final frame and stop time, with no future pulse shown as applied.
+The focused MPC suite passes **23 tests**, including five comparison tests
+covering three/four-case layouts, recorded load magnitudes and units, missing
+load data, and suppression of future or post-termination events.
+
 The earlier DIAL implementation passed **90 total tests** and completed
 three physical 4-second trials with privileged current aerodynamic-wrench
 access. The [historical result bundle](../mpc/results/g1_demo.json) and
