@@ -153,10 +153,11 @@ def run_case(args, scenario):
     from .controller import DIALController
     config = json.loads(Path(args.controller_config).read_text(encoding="utf-8")) if args.controller_config else {}
     config["duration"] = max(float(config.get("duration", 0.)), args.duration)
+    native_calm = scenario == "calm"
     wind_cfg = WindFieldConfig(kind="tornado" if scenario == "tornado" else "calm")
-    field = make_wind_field(wind_cfg)
-    env = G1PhysicsEnv(wind_scale=args.wind_scale if scenario == "tornado" else 1.,
-                       drag_model="surface", wind_field=field, record_wind_history=True,
+    field = None if native_calm else make_wind_field(wind_cfg)
+    env = G1PhysicsEnv(wind_scale=0. if native_calm else args.wind_scale if scenario == "tornado" else 1.,
+                       drag_model="none" if native_calm else "surface", wind_field=field, record_wind_history=True,
                        surface_max_patches=args.surface_patches)
     controller = DIALController(env, config)
     try:
@@ -166,11 +167,12 @@ def run_case(args, scenario):
             enabled=scenario == "random", settle_time_s=.25,
             interval_s=(.35, .65), duration_s=(.12, .25)))
         scheduler.reset(seed=args.seed + 100000, horizon_s=args.duration, strength=args.disturbance_strength)
-        env.disturbance_callback = scheduler.sample
+        env.disturbance_callback = None if native_calm else scheduler.sample
         output = Path(args.output) / scenario
         summary = run_episode(env, controller, duration=args.duration, output=output,
                               scenario=scenario, seed=args.seed, controller_config=config,
-                              disturbance_metadata=scheduler.metadata(), wind_metadata=field.metadata())
+                              disturbance_metadata=scheduler.metadata(),
+                              wind_metadata=None if field is None else field.metadata())
     finally:
         controller.close()
     print(json.dumps({key: summary[key] for key in ("scenario", "elapsed_simulation_s", "forward_progress_m",
@@ -183,7 +185,8 @@ def run_case(args, scenario):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cases", nargs="+", choices=CASES, default=list(CASES))
+    parser.add_argument("--cases", nargs="+", choices=CASES, default=list(CASES),
+                        help="calm: native walking without aerodynamic/injected loads; other cases retain surface drag")
     parser.add_argument("--duration", type=float, default=4.)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--controller-config", default=str(Path(__file__).parent / "configs" / "g1_demo.json"),

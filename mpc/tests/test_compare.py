@@ -4,7 +4,7 @@ import unittest
 
 import numpy as np
 
-from mpc.compare import comparison_layout, default_tile_label, pulse_caption, recorded_pulses
+from mpc.compare import comparison_layout, default_tile_label, exposure_label, pulse_caption, recorded_pulses
 
 
 class ComparisonTests(unittest.TestCase):
@@ -65,6 +65,15 @@ class ComparisonTests(unittest.TestCase):
         large = {"scenario": "random", "disturbances": {"strength": 1.}}
         self.assertIn("0.20", default_tile_label(moderate))
         self.assertIn("1.00", default_tile_label(large))
+
+    def test_native_and_historical_still_air_runs_have_distinct_exposures(self):
+        native = {"scenario": "calm", "drag_model": "none", "disturbances": {
+            "config": {"enabled": False}, "events": []}}
+        old = {**native, "drag_model": "surface"}
+        self.assertEqual(exposure_label(native), "Native MuJoCo; no drag or injected loads")
+        self.assertEqual(exposure_label(old), "Still-air surface drag; no injected loads")
+        native["disturbances"]["config"]["enabled"] = True
+        self.assertEqual(exposure_label(native), "Aerodynamics off; injected loads enabled")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,8 @@ The latest videos on this checkout are in
 `random_disturbances.mp4`, and `wind_field.mp4`. Earlier force-informed
 videos are separately labeled under `outputs/dial_mpc/historical_known_loads/`.
 These local files are not downloaded by cloning the repository. The selected
-published copies linked below remain in `mpc/assets/`.
+published copies in `mpc/assets/unknown_disturbances/` preserve the earlier
+still-air comparison; their calm trial is not the new native-MuJoCo baseline.
 
 New `python -m mpc --video` runs default to `outputs/dial_mpc/demo/`, with
 each case's video at `<case>/walking.mp4` alongside its states and logs.
@@ -36,12 +37,22 @@ targets and directions as the earlier random trial, with pulse amplitudes
 multiplied by five (`--disturbance-strength 1.0` versus `0.2`). Its actual
 peak link force was 137.835 N, and it terminated at 3.40 s after crossing
 both pelvis-height and tilt limits. It did not pass the walking check.
-The other three trajectories are reused; they were not rerun or retuned.
+The moderate-impact, large-impact and wind trajectories are retained without
+rerunning or retuning. The native calm trajectory was run separately under
+`outputs/dial_mpc/native_calm/calm/`. Previous canonical calm/comparison videos
+and `comparison_2x2_results.json` are preserved under
+`outputs/dial_mpc/unknown_disturbances/before_native_calm/`.
 
-**What the arrows mean:** they show aerodynamic surface drag, not injected
-impacts. Calm air still produces small drag on moving limbs because relative
-air velocity is `wind_velocity - surface_velocity`; the calm trial's peak
-total drag is 0.042 N. Local arrows are scaled independently for each clip,
+**Calm means native MuJoCo walking with aerodynamics and injected loads fully
+disabled:** `drag_model="none"`, no wind provider, zero wind scale and no
+disturbance callback. Gravity, joint actuators and contact/friction physics
+remain active. Its robot is opaque and has no force arrows.
+
+**What the arrows mean in the other cases:** they show aerodynamic surface
+drag, not injected impacts; those drag views retain 50% robot opacity. The
+earlier still-air trial kept surface drag enabled and reached 0.042 N peak
+drag on moving limbs. That is a historical different condition, not the new
+native calm baseline. Local arrows are scaled independently for each clip,
 so their lengths should not be compared between cases. Random impacts are
 finite-duration forces/torques at selected link centers of mass or hinge
 joint torques, not surface collisions. The 2x2 video reports their recorded
@@ -70,7 +81,8 @@ candidate frameworks; no checkpoint choice is final. Current terrain is flat.
 Neither rough-terrain performance nor hardware transfer has been established.
 The [experiment protocol](docs/experiment_protocol.md) separates the required
 PPO comparison, optional ablations and later research claims.
-The full suite passes **92 tests**, including a regression that changes or
+The recorded full-suite run before the native-calm change passed **92 tests**,
+including a regression that changes or
 invalidates force, field, event and solver-warm-start data while holding the
 allowed observation fixed. See [validation results](docs/validation.md).
 
@@ -82,20 +94,29 @@ forces, wind-field data, event schedules, or the plant solver's internal
 warm-start state. The controller stores no reference to the environment.
 It responds to disturbances through their effects on the observed motion.
 
-**Calm walking and the random-pulse trial completed; the full-strength wind
-trial failed after 2.40 s.** All three use the same initial state, seed 7,
-controller settings and unknown-load observation interface.
+**The fresh native calm and moderate random-pulse trials completed; the
+full-strength wind trial failed after 2.40 s.** Native calm uses the same
+controller, initial state and seed 7, with aerodynamic and injected loads
+fully disabled. It traveled 0.517 m in 4 s, with 0.233 m/s planar velocity
+RMSE. All recorded aerodynamic and injected loads were exactly zero over
+2,000 physics steps. This is a newly simulated trajectory, not a relabeling
+of the earlier still-air footage.
 
-[Watch the unknown-disturbance comparison](mpc/assets/unknown_disturbances/comparison.mp4).
-Individual videos: [calm](mpc/assets/unknown_disturbances/calm.mp4),
+The canonical local artifacts are
+`outputs/dial_mpc/unknown_disturbances/{calm.mp4,comparison.mp4,
+comparison_2x2.mp4,comparison_2x2_results.json}`. The native calm model,
+trajectory and summary are in `outputs/dial_mpc/native_calm/calm/`.
+
+[Historical unknown-disturbance comparison with still-air calm](mpc/assets/unknown_disturbances/comparison.mp4).
+Historical individual videos: [still-air calm](mpc/assets/unknown_disturbances/calm.mp4),
 [random disturbances](mpc/assets/unknown_disturbances/random_disturbances.mp4),
 [wind field, including the failure](mpc/assets/unknown_disturbances/wind_field.mp4).
 
-![Physical G1 DIAL-MPC with unknown external impacts](mpc/assets/unknown_disturbances/comparison.png)
+![Historical comparison: its calm panel includes still-air drag](mpc/assets/unknown_disturbances/comparison.png)
 
 | Case | Executed / requested time | Forward travel | Planar velocity RMSE | Walking check |
 | --- | --- | --- | --- | --- |
-| Calm | 4.00 / 4.00 s | 0.502 m | 0.245 m/s | Passed |
+| Native calm, aerodynamics off | 4.00 / 4.00 s | 0.517 m | 0.233 m/s | Passed |
 | Six random joint/link pulses | 4.00 / 4.00 s | 0.510 m | 0.230 m/s | Passed |
 | Full configured vortex | 2.40 / 4.00 s | 0.109 m | 0.880 m/s | **Failed** |
 
@@ -103,11 +124,13 @@ The wind case drifted laterally by 1.337 m and terminated when pelvis height
 fell to 0.440 m, below the 0.45 m limit. The tilt threshold was not the trigger.
 Peak modeled aerodynamic force was 25.58 N. This is a failure of this G1
 configuration and planning budget on this trial, not evidence that DIAL-MPC
-generally cannot handle wind. The other two short single-seed successes do
-not establish a broad robustness benchmark. The
-[result bundle](mpc/results/g1_unknown_disturbances.json) preserves exact
-metrics, settings and events. Mean CPU planning times were 1.19-1.32 s per
-0.02 s control interval; these demonstrations are not real-time control.
+generally cannot handle wind. The short single-seed results do not establish
+a broad robustness benchmark. The
+[historical result bundle](mpc/results/g1_unknown_disturbances.json) preserves
+the earlier still-air, random-load and wind metrics, settings and events. It
+is not a result bundle for the new native calm condition. Mean CPU planning
+times in those recorded trials were 1.19-1.32 s per 0.02 s control interval;
+these demonstrations are not real-time control.
 
 The earlier [comparison video](mpc/assets/comparison.mp4) and
 [results](mpc/results/g1_demo.json) are **historical privileged-load
@@ -137,7 +160,8 @@ the actual final frame after termination and do not invent later motion or
 scheduled impacts.
 
 Allow several minutes per case on a CPU. `--video` renders the actual
-integrated trajectory with 50% robot opacity and aerodynamic drag vectors.
+integrated trajectory. Native calm is opaque with no arrows; aerodynamic
+drag views for the other cases use 50% robot opacity and drag vectors.
 Random injected loads are separately captioned. Each case records the exact
 compiled model, states, physical loads, contact events, planning latency and
 failure status; existing output directories are never overwritten.
@@ -151,8 +175,9 @@ not a reproduction of the upstream H1 benchmark or a kinematic walking replay.
 
 The former `wind_prediction="current_wrench"` mode is removed; old configs
 requesting privileged load access are rejected. Physical surface drag and
-random loads remain active, and their logs/visualizations are kept outside
-the controller. At disturbance strength 0.2, random peak limits are 30 N
+random loads remain active in their respective disturbance cases, and their
+logs/visualizations are kept outside the controller. Native calm disables
+both. At disturbance strength 0.2, random peak limits are 30 N
 link force, 4 N m link torque and 6 N m joint torque; the actual sampled event
 schedule is saved with every run.
 
@@ -245,8 +270,9 @@ Loads are additive with wind and applied at every physics step. They expire
 without resetting velocity.
 
 `train_random` disables aerodynamics (`drag_model="none"`) for throughput.
-Wind evaluation integrates surface drag. Calm air still resists moving
-surfaces, so it differs physically from disabling drag.
+The separate RL wind evaluator integrates surface drag; its `calm` preset
+still means still air acting on moving surfaces. The DIAL-MPC CLI's native
+`calm` case instead disables aerodynamic physics completely, as defined above.
 
 ## Evaluation protocol
 

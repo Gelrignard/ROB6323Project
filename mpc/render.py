@@ -1,4 +1,4 @@
-"""Render saved physical DIAL-MPC trajectories with drag-only force vectors.
+"""Render physical DIAL-MPC trajectories, with drag vectors only when enabled.
 
 State assignment happens only in this offline renderer, never in control.
 Each run retains its own outcome and actual duration, including failures.
@@ -57,6 +57,33 @@ def controller_information_label(summary):
     return "Controller inputs not recorded (historical run)"
 
 
+def setup_drag_visualization(model, summary):
+    """Native no-drag playback must not instantiate any aerodynamic model."""
+    mode = summary.get("drag_model")
+    if mode == "none":
+        return None, None
+    if mode != "surface":
+        raise ValueError("This renderer supports drag_model='none' or 'surface'")
+    provider_fields = {field.name for field in fields(WindFieldConfig)}
+    wind_spec = {key: value for key, value in (summary.get("wind_field") or {"kind": "calm"}).items()
+                 if key in provider_fields}
+    provider = make_wind_field(wind_spec)
+    surface_meta = summary.get("surface_model") or {}
+    drag = SurfaceDrag(model, wind_config=TornadoConfig(**summary["wind_config"]),
+                       max_patches=surface_meta.get("quadrature_patches", 4096))
+    return drag, provider
+
+
+def frame_drag_record(data, summary, drag, provider):
+    if summary.get("drag_model") == "none":
+        return {"drag_model": "none", "drag_force": np.zeros(3)}
+    result = drag.evaluate(data, wind_scale=summary["wind_scale"], wind_field=provider)
+    return {"drag_model": "surface", "drag_origin": result.com.copy(),
+            "drag_force": result.total_force.copy(),
+            "surface_drag": {"points": result.points.copy(), "forces": result.patch_forces.copy(),
+                             "pressure": result.pressure_Pa.copy()}}
+
+
 def _panel(frame, row, records, index, summary, arrows):
     background, text, muted, coral = (12, 25, 38), (235, 243, 248), (153, 175, 192), (255, 126, 97)
     panel = Image.new("RGB", (480, 720), background)
@@ -71,32 +98,46 @@ def _panel(frame, row, records, index, summary, arrows):
         draw.text((x, 190), foot, font=_font(16), fill=muted)
         draw.text((x, 213), "CONTACT" if contact else "AIRBORNE", font=_font(20),
                   fill=(102, 225, 157) if contact else (255, 206, 84))
-    draw.text((24, 258), "AERODYNAMIC DRAG ONLY", font=_font(21), fill=text)
-    draw.text((24, 297), f"|F| = {np.linalg.norm(force):.2f} N", font=_font(27), fill=coral)
-    draw.text((24, 337), f"Fx {force[0]:+.2f}   Fy {force[1]:+.2f}   Fz {force[2]:+.2f}",
-              font=_font(18), fill=text)
-    times = np.array([r["time"] for r in records])
-    magnitudes = np.linalg.norm([r["drag_force"] for r in records], axis=1)
-    left, right, top, bottom = 58, 449, 386, 493
-    max_force = max(1., float(np.max(magnitudes)) * 1.1)
-    max_time = max(float(times[-1]), 1e-9)
-    for fraction in (0., .5, 1.):
-        y = bottom - fraction * (bottom - top)
-        draw.line((left, y, right, y), fill=(45, 65, 80))
-        draw.text((left - 8, y), f"{fraction*max_force:.1f}", font=_font(13), fill=muted, anchor="rm")
-    points = [(left + t/max_time*(right-left), bottom-f/max_force*(bottom-top))
-              for t, f in zip(times[:index+1], magnitudes[:index+1])]
-    if len(points) > 1:
-        draw.line(points, fill=coral, width=3)
-    draw.text((left, bottom+8), "0 s", font=_font(13), fill=muted)
-    draw.text((right, bottom+8), f"{max_time:.2f} s", font=_font(13), fill=muted, anchor="rt")
+    if arrows is None:
+        draw.text((24, 258), "NATIVE MUJOCO WALKING", font=_font(23), fill=text)
+        draw.text((24, 305), "Aerodynamic drag: OFF", font=_font(24), fill=text)
+        draw.text((24, 357), "Gravity, joint actuators and contacts", font=_font(18), fill=muted)
+        draw.text((24, 397), "No aerodynamic force model evaluated", font=_font(17), fill=muted)
+        draw.text((24, 437), "No drag vectors or drag chart", font=_font(18), fill=muted)
+    else:
+        draw.text((24, 258), "AERODYNAMIC DRAG ONLY", font=_font(21), fill=text)
+        draw.text((24, 297), f"|F| = {np.linalg.norm(force):.2f} N", font=_font(27), fill=coral)
+        draw.text((24, 337), f"Fx {force[0]:+.2f}   Fy {force[1]:+.2f}   Fz {force[2]:+.2f}",
+                  font=_font(18), fill=text)
+        times = np.array([r["time"] for r in records])
+        magnitudes = np.linalg.norm([r["drag_force"] for r in records], axis=1)
+        left, right, top, bottom = 58, 449, 386, 493
+        max_force = max(1., float(np.max(magnitudes)) * 1.1)
+        max_time = max(float(times[-1]), 1e-9)
+        for fraction in (0., .5, 1.):
+            y = bottom - fraction * (bottom - top)
+            draw.line((left, y, right, y), fill=(45, 65, 80))
+            draw.text((left - 8, y), f"{fraction*max_force:.1f}", font=_font(13), fill=muted, anchor="rm")
+        points = [(left + t/max_time*(right-left), bottom-f/max_force*(bottom-top))
+                  for t, f in zip(times[:index+1], magnitudes[:index+1])]
+        if len(points) > 1:
+            draw.line(points, fill=coral, width=3)
+        draw.text((left, bottom+8), "0 s", font=_font(13), fill=muted)
+        draw.text((right, bottom+8), f"{max_time:.2f} s", font=_font(13), fill=muted, anchor="rt")
     if row["active_events"]:
         draw.text((24, 546), "RANDOM LOAD ACTIVE", font=_font(22), fill=(255, 206, 84))
         draw.text((24, 579), ", ".join(row["active_events"])[:47], font=_font(15), fill=muted)
     else:
-        draw.text((24, 550), "No injected pulse at this instant", font=_font(17), fill=muted)
-    draw.text((24, 610), "Drag vectors: visualization only", font=_font(17), fill=text)
-    draw.text((24, 640), f"Robot opacity 50%; resultant {arrows.arrow_scale:.3g} m/N", font=_font(14), fill=muted)
+        disturbances = summary.get("disturbances") or {}
+        injection_enabled = bool((disturbances.get("config") or {}).get("enabled") or disturbances.get("events"))
+        pulse_status = "Injected disturbances: OFF" if arrows is None and not injection_enabled else "No injected pulse at this instant"
+        draw.text((24, 550), pulse_status, font=_font(17), fill=muted)
+    if arrows is None:
+        draw.text((24, 610), "Aerodynamics disabled in the saved run", font=_font(17), fill=text)
+        draw.text((24, 640), "Robot opacity 100%; no force arrows", font=_font(16), fill=muted)
+    else:
+        draw.text((24, 610), "Drag vectors: visualization only", font=_font(17), fill=text)
+        draw.text((24, 640), f"Robot opacity 50%; resultant {arrows.arrow_scale:.3g} m/N", font=_font(14), fill=muted)
     draw.text((24, 675), "Synchronous CPU planning; video in sim time", font=_font(15), fill=muted)
     scene = Image.fromarray(frame)
     scene_draw = ImageDraw.Draw(scene)
@@ -122,15 +163,8 @@ def render_run(directory, output=None, fps=25):
     trajectory = np.load(directory / "trajectory.npz")
     model = mujoco.MjModel.from_binary_path(str(directory / "model.mjb"))
     data = mujoco.MjData(model)
-    provider_fields = {field.name for field in fields(WindFieldConfig)}
-    wind_spec = {key: value for key, value in (summary.get("wind_field") or {"kind": "calm"}).items()
-                 if key in provider_fields}
-    provider = make_wind_field(wind_spec)
-    surface_meta = summary.get("surface_model") or {}
-    drag = SurfaceDrag(model, wind_config=TornadoConfig(**summary["wind_config"]),
-                       max_patches=surface_meta.get("quadrature_patches", 4096))
-    if summary.get("drag_model") != "surface":
-        raise ValueError("This renderer currently expects the surface-drag demo model")
+    drag, provider = setup_drag_visualization(model, summary)
+    robot_opacity = 1. if drag is None else .5
     control_dt = float(summary["control_dt_s"])
     stride = max(1, int(round(1 / (fps * control_dt))))
     indices = list(range(0, len(trajectory["time"]), stride))
@@ -145,16 +179,12 @@ def render_run(directory, output=None, fps=25):
         data.qpos[:], data.qvel[:], data.ctrl[:] = trajectory["qpos"][i], trajectory["qvel"][i], trajectory["ctrl"][i]
         data.time = float(trajectory["time"][i])
         mujoco.mj_forward(model, data)
-        result = drag.evaluate(data, wind_scale=summary["wind_scale"], wind_field=provider)
-        records.append({"index": i, "time": data.time, "drag_model": "surface",
-                        "drag_origin": result.com.copy(), "drag_force": result.total_force.copy(),
-                        "surface_drag": {"points": result.points.copy(), "forces": result.patch_forces.copy(),
-                                         "pressure": result.pressure_Pa.copy()},
+        records.append({"index": i, "time": data.time, **frame_drag_record(data, summary, drag, provider),
                         "progress": float(data.qpos[0] - trajectory["qpos"][0, 0]),
                         "contact": trajectory["foot_contact"][i],
                         "active_events": [event["kind"] for event in events
                                           if event["start_s"] <= data.time < event["start_s"] + event["duration_s"]]})
-    arrows = ForceVisualizer(records, SimpleNamespace(height=.7, control_dt=1/effective_fps))
+    arrows = ForceVisualizer(records, SimpleNamespace(height=.7, control_dt=1/effective_fps)) if drag is not None else None
     camera = mujoco.MjvCamera()
     camera.azimuth, camera.elevation, camera.distance = 135, -20, 3.1
     renderer = mujoco.Renderer(model, height=720, width=960)
@@ -170,8 +200,9 @@ def render_run(directory, output=None, fps=25):
             mujoco.mj_forward(model, data)
             camera.lookat[:] = [*data.qpos[:2], .65]
             renderer.update_scene(data, camera=camera)
-            set_robot_opacity(renderer.scene, model, opacity=.5)
-            arrows.decorate(renderer.scene, row)
+            set_robot_opacity(renderer.scene, model, opacity=robot_opacity)
+            if arrows is not None:
+                arrows.decorate(renderer.scene, row)
             frame = _panel(renderer.render(), row, records, index, summary, arrows)
             writer.append_data(frame)
             if index == min(len(records)-1, int(effective_fps)):
@@ -182,10 +213,13 @@ def render_run(directory, output=None, fps=25):
         renderer.close()
         trajectory.close()
     info = {"source": str(directory.resolve()), "video": str(output.resolve()),
-            "frames": len(records), "fps": effective_fps, "robot_opacity": .5,
-            "drag_model": "same surface quadrature re-evaluated at saved physical states",
+            "frames": len(records), "fps": effective_fps, "robot_opacity": robot_opacity,
+            "drag_model": summary["drag_model"],
+            "drag_visualization": ("disabled; no aerodynamic model or provider instantiated" if drag is None else
+                                   "same surface quadrature re-evaluated at saved physical states"),
             "scope": "actual integrated trajectory; state replay occurs only for rendering",
-            "force_arrows": "aerodynamic drag only; injected pulses are separately captioned",
+            "force_arrows": ("none; aerodynamics disabled" if arrows is None else
+                             "aerodynamic drag only; injected pulses are separately captioned"),
             "controller_information_label": controller_information_label(summary),
             "controller_metadata": summary.get("controller_metadata"),
             "controller_config": summary.get("controller_config"),

@@ -40,6 +40,26 @@ def default_tile_label(summary):
     return summary["scenario"].upper()
 
 
+def exposure_label(summary):
+    """Distinguish native MuJoCo from historical still-air drag recordings."""
+    disturbance = summary.get("disturbances") or {}
+    config = disturbance.get("config") or {}
+    injection_enabled = bool(config.get("enabled") or disturbance.get("events"))
+    if summary.get("drag_model") == "none":
+        return ("Aerodynamics off; injected loads enabled" if injection_enabled else
+                "Native MuJoCo; no drag or injected loads")
+    if summary["scenario"] == "tornado":
+        return f"Vortex wind speed scale {summary['wind_scale']:.2f}"
+    if summary["scenario"] == "random":
+        strength = disturbance.get("strength", 0.)
+        return (f"Caps: {strength * config.get('link_force_max_n', 0.):g} N force; "
+                f"{strength * config.get('link_torque_max_nm', 0.):g} N m link torque; "
+                f"{strength * config.get('joint_torque_max_nm', 0.):g} N m joint torque")
+    if summary.get("drag_model") == "surface":
+        return "Still-air surface drag; no injected loads" if not injection_enabled else "Still-air surface drag; injected loads enabled"
+    return "Aerodynamic model not recorded (historical run)"
+
+
 def recorded_pulses(states, events, time_s, end_s, body_ids, joint_dofs):
     """Current per-target load from recorded physics samples, never forecasts.
 
@@ -152,20 +172,8 @@ def _tile(source, time_s, label=None):
     summary = source.summary
     tile = Image.new("RGB", (720, 720), BACKGROUND)
     draw = ImageDraw.Draw(tile)
-    case = summary["scenario"]
     draw.text((20, 8), label or default_tile_label(summary), font=_font(25), fill=TEXT)
-    if case == "tornado":
-        exposure = f"Vortex wind speed scale {summary['wind_scale']:.2f}"
-    elif case == "random":
-        disturbance = summary.get("disturbances") or {}
-        strength = disturbance.get("strength", 0.)
-        config = disturbance.get("config") or {}
-        exposure = (f"Caps: {strength * config.get('link_force_max_n', 0.):g} N force; "
-                    f"{strength * config.get('link_torque_max_nm', 0.):g} N m link torque; "
-                    f"{strength * config.get('joint_torque_max_nm', 0.):g} N m joint torque")
-    else:
-        exposure = "Calm air; no injected disturbances"
-    draw.text((20, 44), exposure, font=_font(18), fill=MUTED)
+    draw.text((20, 44), exposure_label(summary), font=_font(18), fill=MUTED)
     draw.text((20, 76), controller_information_label(summary), font=_font(17), fill=TEXT)
     # Our source render is a960px-wide scene plus a480px quantitative panel.
     # Crop its scene, remove its duplicate caption, preserve aspect ratio.
@@ -178,7 +186,8 @@ def _tile(source, time_s, label=None):
         message = ("FAILED" if failure else "ENDED") + f" at {source.end:.2f} s - FINAL FRAME HELD"
         draw.rectangle((0, 112, 720, 166), fill=BACKGROUND)
         draw.text((360, 124), message, font=_font(23), fill=FAILURE if failure else TEXT, anchor="mt")
-    draw.text((20, 574), f"t={row['time']:.2f} s   forward={row['progress']:+.3f} m   drag={row['drag']:.2f} N",
+    load_text = "aerodynamics OFF" if summary.get("drag_model") == "none" else f"drag={row['drag']:.2f} N"
+    draw.text((20, 574), f"t={row['time']:.2f} s   forward={row['progress']:+.3f} m   {load_text}",
               font=_font(20), fill=TEXT)
     contacts = " / ".join("contact" if value else "airborne" for value in row["contact"])
     draw.text((20, 607), f"Feet L/R: {contacts}", font=_font(17), fill=MUTED)
@@ -225,7 +234,7 @@ def compare_runs(directories, output, fps=25, labels=None):
             canvas = Image.new("RGB", canvas_size, BACKGROUND)
             draw = ImageDraw.Draw(canvas)
             draw.text((24, 12), f"G1 DIAL-MPC  |  {len(sources)} PHYSICAL ROLLOUTS", font=_font(28), fill=TEXT)
-            draw.text((24, 48), "Arrows: air drag only, scaled per clip. Injected loads: recorded values in text.", font=_font(16), fill=MUTED)
+            draw.text((24, 48), "Air-drag arrows where enabled, scaled per clip. Injected loads: recorded values in text.", font=_font(16), fill=MUTED)
             draw.text((canvas_size[0]-26, 22), f"SIM TIME {time_s:.2f} s   |   offline CPU planning", font=_font(21), fill=MUTED, anchor="rt")
             for position, source in enumerate(sources):
                 row, column = divmod(position, columns)
@@ -242,6 +251,9 @@ def compare_runs(directories, output, fps=25, labels=None):
         writer = None
         metadata = {"runs": [{"directory": str(source.directory.resolve()), "label": label,
                                "scenario": source.summary["scenario"], "duration_s": source.end,
+                               "drag_model": source.summary.get("drag_model"),
+                               "exposure_label": exposure_label(source.summary),
+                               "robot_opacity": 1. if source.summary.get("drag_model") == "none" else .5,
                                "wind_scale": source.summary.get("wind_scale"),
                                "wind_field": source.summary.get("wind_field"),
                                "wind_config": source.summary.get("wind_config"),
@@ -257,7 +269,7 @@ def compare_runs(directories, output, fps=25, labels=None):
                     "layout": {"columns": columns, "rows": rows, "input_order": "row-major", "pixels": canvas_size},
                     "timeline": "shared simulated seconds; no time stretching",
                     "shorter_runs": "hold actual final frame with explicit ENDED/FAILED banner",
-                    "force_display": "air-drag vectors only, scaled independently per source clip; injected pulses captioned with target, actual recorded magnitude and unit",
+                    "force_display": "no arrows for drag_model=none; air-drag vectors otherwise, scaled independently per source clip; injected pulses captioned with target, actual recorded magnitude and unit",
                     "injected_load_sampling": "latest recorded physics sample at or before current time; no active-load caption at or after episode end; same-target overlapping loads show recorded aggregate"}
         sidecar.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         print(json.dumps(metadata, indent=2), flush=True)

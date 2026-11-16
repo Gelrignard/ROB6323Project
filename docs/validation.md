@@ -3,10 +3,12 @@
 The current DIAL-MPC baseline excludes all external-load information. Its
 only runtime input is `RobotObservation(time, qpos, qvel)`. The controller
 retains no environment object, and its predictions use zero external loads
-and zero plant-solver warm starts. Physical drag, injected loads, logging
-and force visualization remain active in the environment.
+and zero plant-solver warm starts. Disturbed cases retain physical drag
+and/or injected loads, with logging and force visualization outside the
+controller. Native calm disables aerodynamic and injected loads completely.
 
-The full test suite passes **92 tests in 79.68 s**. A force-poisoning
+The full-suite run before the native-calm change passed **92 tests in 79.68 s**.
+A force-poisoning
 regression keeps the allowed robot observation and planner seed fixed while
 replacing simulator force/torque buffers with extreme values, invalidating
 solver warm starts, and making wind/event providers raise on access. The
@@ -15,28 +17,58 @@ warm starts, and retains no environment reference. Additional checks ensure
 the observation reads only time/qpos/qvel and the former privileged-load mode
 is rejected.
 
-Three new physical trials use the same 64 candidates, three refinement
-iterations, requested 4-second episodes and seed 7 across conditions. Their
-prediction horizon is 0.4 s. **The unknown-wind trial failed after 2.40 s;
-the calm and random-pulse trials completed their declared walking checks.**
+The current comparison uses 64 candidates, three refinement iterations,
+requested 4-second episodes and seed 7. Its prediction horizon is 0.4 s.
+Native calm was freshly rerun with aerodynamics completely disabled; the
+moderate-impact, large-impact and wind trajectories are retained unchanged.
+**The unknown-wind trial failed after 2.40 s; native calm and the moderate
+random-pulse trial completed their declared walking checks.**
 
 | Case | Executed time | Forward travel | Planar velocity RMSE | Outcome |
 | --- | --- | --- | --- | --- |
-| Calm | 4.00 s | 0.502 m | 0.245 m/s | Completed, walking check passed |
+| Native calm, aerodynamics off | 4.00 s | 0.517 m | 0.233 m/s | Completed, walking check passed |
 | Six random joint/link pulses | 4.00 s | 0.510 m | 0.230 m/s | Completed, walking check passed |
 | Full configured vortex | 2.40 s | 0.109 m | 0.880 m/s | Pelvis-height termination |
 
 The wind trial reached pelvis height 0.440 m, below the 0.45 m threshold;
 the tilt threshold was not crossed. Lateral drift was 1.337 m and peak drag
 was 25.58 N. Initial robot state, controller settings and seed were held
-fixed across the three cases, and the random event schedule matches the
-earlier demonstration. The
-[result bundle](../mpc/results/g1_unknown_disturbances.json) and
-[comparison video](../mpc/assets/unknown_disturbances/comparison.mp4) preserve
-the new outcomes, including the wind failure. Mean planning times were
-1.19-1.32 s per 0.02 s control interval, so these are offline CPU results.
+fixed across the cases, and the random event schedule matches the earlier
+demonstration. Current local results and videos are in
+`outputs/dial_mpc/unknown_disturbances/`, including the wind failure. These
+are offline CPU results.
 This short, single-seed failure is evidence about the tested G1 configuration
 and planning budget, not a general failure claim about the DIAL-MPC method.
+
+## Native MuJoCo calm verification
+
+The fresh run is saved under `outputs/dial_mpc/native_calm/calm/`. It uses
+`drag_model="none"`, zero wind scale, no wind provider or surface-drag object,
+no disturbance callback and an empty event schedule. The saved MuJoCo model
+also has zero fluid density, viscosity and built-in wind. Gravity, actuators,
+contacts and friction remain active.
+
+Across 2,000 physical integration steps, all seven recorded aerodynamic and
+injected force/torque arrays were exactly zero. The robot completed 4 s,
+advanced 0.516627 m and achieved 0.233128 m/s planar velocity RMSE. Its minimum
+pelvis height was 0.725689 m. Mean planner time was 0.770329 s per 0.02 s
+control interval; this remains an offline result. The native calm renderer
+uses an opaque robot with no force arrows, while aerodynamic drag views in
+the other cases retain 50% opacity.
+
+After this change, the focused MPC suite passed **29 tests**. New checks
+exercise moving joints with all external loads disabled, verify unchanged
+random/wind routing, and ensure native rendering never constructs a surface
+drag model, wind provider or force visualizer. Native and historical still-air
+recordings receive distinct comparison labels.
+
+The earlier still-air trial had surface drag enabled, with 0.042 N peak
+drag, 0.502 m progress and 0.245 m/s RMSE. The tracked
+[result bundle](../mpc/results/g1_unknown_disturbances.json) and
+[comparison video](../mpc/assets/unknown_disturbances/comparison.mp4) preserve
+that historical condition; they are not relabeled as native calm. The
+previous canonical local files are preserved under
+`outputs/dial_mpc/unknown_disturbances/before_native_calm/`.
 
 ## Additional large-impact condition
 
@@ -57,11 +89,12 @@ cut short by termination, so its prescribed full-pulse peak was not reached.
 Raw data and video are in `outputs/dial_mpc/large_impacts/random/`.
 The four-case comparison and results are under
 `outputs/dial_mpc/unknown_disturbances/comparison_2x2*`; all remain Git-ignored.
-The previous calm, smaller-impact and wind trajectories are reused.
-Arrows remain aerodynamic only and are scaled per source clip. Recorded
+The smaller-impact, large-impact and wind trajectories remain unchanged;
+the calm panel now uses the fresh native-MuJoCo run described above.
+Arrows in aerodynamic views remain drag-only and are scaled per source clip. Recorded
 impact targets and magnitudes are shown separately; failed runs retain their
 actual final frame and stop time, with no future pulse shown as applied.
-The focused MPC suite passes **23 tests**, including five comparison tests
+The earlier focused MPC suite passed **23 tests**, including five comparison tests
 covering three/four-case layouts, recorded load magnitudes and units, missing
 load data, and suppression of future or post-termination events.
 

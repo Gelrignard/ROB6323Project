@@ -18,14 +18,22 @@ generalized velocity. Candidate rollouts contain no injected or aerodynamic
 loads. The controller can react to their observed effects on robot motion;
 it cannot read the force that caused that motion.
 
-The [unknown-disturbance comparison](../mpc/assets/unknown_disturbances/comparison.mp4)
-records three physical trials with identical initial state, seed 7 and
-controller settings. **Calm walking and the random-pulse trial completed;
-the full configured vortex caused failure after 2.40 s.**
+The current **calm** condition means native MuJoCo walking: aerodynamic drag
+is completely disabled (`drag_model="none"`), there is no wind provider or
+disturbance callback, and wind scale is zero. Gravity, actuators, contacts and
+friction remain active. It is not the same condition as still air with a
+surface-drag model enabled.
+
+The fresh native calm trial and the retained moderate random-pulse trial
+completed. The retained full configured vortex trial failed after 2.40 s.
+The controller, initial state and seed 7 are unchanged. Current local
+comparison videos and results are under
+`outputs/dial_mpc/unknown_disturbances/`; the new calm source data are under
+`outputs/dial_mpc/native_calm/calm/`.
 
 | Case | Executed / requested time | Forward travel | Planar velocity RMSE | Walking check |
 | --- | --- | --- | --- | --- |
-| Calm | 4.00 / 4.00 s | 0.502 m | 0.245 m/s | Passed |
+| Native calm, aerodynamics off | 4.00 / 4.00 s | 0.517 m | 0.233 m/s | Passed |
 | Six random joint/link pulses | 4.00 / 4.00 s | 0.510 m | 0.230 m/s | Passed |
 | Full configured vortex | 2.40 / 4.00 s | 0.109 m | 0.880 m/s | **Failed** |
 
@@ -34,10 +42,18 @@ termination limit. The tilt limit was not crossed. Lateral drift was
 1.337 m and peak modeled aerodynamic force was 25.58 N. The failure belongs
 to this G1 adaptation, load-free prediction model and 64-sample/three-refinement
 planning configuration; it is not a general impossibility result for DIAL-MPC.
-The [recorded results](../mpc/results/g1_unknown_disturbances.json) preserve
-the actual metrics and event schedule. Mean planning time was 1.19-1.32 s
-per 0.02 s action interval. These are offline, single-seed demonstrations,
-not a broad robustness or real-time benchmark.
+Native calm recorded exactly zero aerodynamic and injected loads across
+2,000 physics steps. Minimum pelvis height was 0.726 m and mean planning time
+was 0.770 s per 0.02 s interval. The moderate-impact, large-impact and wind
+trajectories are retained without rerunning or retuning. These are offline,
+single-seed demonstrations, not a broad robustness or real-time benchmark.
+
+The tracked [comparison](../mpc/assets/unknown_disturbances/comparison.mp4)
+and [result bundle](../mpc/results/g1_unknown_disturbances.json) preserve the
+earlier **still-air** condition, which recorded 0.042 N peak aerodynamic
+drag. Its 0.502 m / 0.245 m/s calm result is historical and must not be
+relabeled as native calm. Previous canonical local comparison files are
+preserved in `outputs/dial_mpc/unknown_disturbances/before_native_calm/`.
 
 The earlier [videos](../mpc/assets/comparison.mp4) and
 [result bundle](../mpc/results/g1_demo.json) are **historical privileged-load
@@ -128,11 +144,13 @@ warm start. The former `wind_prediction="current_wrench"` mode is removed;
 old configurations requesting it are rejected rather than silently granted
 force access.
 
-The physical plant still integrates surface drag and random loads at every
-0.002 s step. The experiment runner logs those loads, and the renderer uses
-them for drag visualization. Logging and drawing a force does not feed it
-to the planner. With unknown wind, the planner uses a mismatched load-free
-prediction model and corrects its actions after the robot state changes.
+For the disturbed cases, the physical plant integrates surface drag and/or
+random loads at every 0.002 s step. Native calm disables both completely.
+The experiment runner logs loads, and the renderer uses them for drag
+visualization when aerodynamics is enabled. Logging and drawing a force
+does not feed it to the planner. With unknown wind, the planner uses a
+mismatched load-free prediction model and corrects its actions after the
+robot state changes.
 
 `qpos` and `qvel` currently come from noiseless simulation state. They include
 floating-base pose and velocity, so this remains an ideal state-estimation
@@ -152,7 +170,8 @@ From the repository root with the existing project environment:
 Each case writes `summary.json`, `planner.json`, `trajectory.npz` and a model
 snapshot; `--video` renders the recorded physical states. Use a new output
 directory for each experiment. The renderer does not impose a successful
-trajectory or hide a failure. Surface drag arrows represent aerodynamic
+trajectory or hide a failure. Native calm renders an opaque robot without
+force arrows. In the other cases, surface drag arrows represent aerodynamic
 forces only, with 50% robot opacity.
 
 Useful arguments are `--controller-config <JSON>`, `--seed`, `--wind-scale`
