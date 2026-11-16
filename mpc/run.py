@@ -191,7 +191,8 @@ def main():
     parser.add_argument("--wind-scale", type=float, default=1., help="wind speed multiplier for tornado case")
     parser.add_argument("--disturbance-strength", type=float, default=.2, help="fraction of 150N/20Nm/30Nm event peaks")
     parser.add_argument("--surface-patches", type=int, default=4096)
-    parser.add_argument("--output", default="mpc/outputs/demo")
+    parser.add_argument("--output", default="outputs/dial_mpc/demo",
+                        help="run directory (default: %(default)s); each case directory must be empty")
     parser.add_argument("--video", action="store_true")
     args = parser.parse_args()
     if not np.isfinite(args.duration) or args.duration <= 0:

@@ -1,4 +1,4 @@
-"""NumPy/SciPy port of the official DIAL-MPC annealed sampling optimizer.
+"""Independent NumPy/SciPy implementation based on DIAL-MPC's optimizer.
 
 Algorithm source: LeCAR-Lab/dial-mpc, core/dial_core.py, revision
 871c84f1cefbe9fa9d83a06b05ab4f0243c1a05c (Apache-2.0).
@@ -91,8 +91,9 @@ class DIALOptimizer:
     The callback receives (samples+1, horizon_steps+1, action_dim) controls
     and returns one accumulated cost per trajectory. The last trajectory is
     always the incumbent. Quadratic interpolation can overshoot [-1,1]
-    between clipped knots, exactly as upstream; actuator-range clipping must
-    therefore be represented identically in rollout and real-plant decoding.
+    between clipped knots; numerical spline equivalence to upstream has not
+    been established. Actuator-range clipping must be represented identically
+    in rollout and real-plant decoding.
 
     Defaults freeze the first knot, following the official pipelined loop.
     Set freeze_first=False explicitly for synchronous zero-delay replanning.

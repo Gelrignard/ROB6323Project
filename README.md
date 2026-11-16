@@ -2,8 +2,27 @@
 
 ROB6323 Optimal Control & Reinforcement Learning course project: physical G1
 walking under joint/link disturbances and wind. The current executable
-controller is a G1 port of **DIAL-MPC**, with no learned policy required.
+controller is our **G1 adaptation based on DIAL-MPC**, with no learned policy required.
 Selecting and fine-tuning an RL walking policy remains a separate experiment.
+
+This is an independently implemented adaptation, **not the unchanged official
+implementation or a reproduction of the paper's benchmark**. Read the
+[implementation differences and verification limits](mpc/UPSTREAM.md) alongside
+the paper; the current tests do not establish numerical or behavioral equivalence
+to upstream.
+
+## Local output videos
+
+Generated outputs belong in the Git-ignored top-level `outputs/` directory.
+The latest videos on this checkout are in
+`outputs/dial_mpc/unknown_disturbances/`: `comparison.mp4`, `calm.mp4`,
+`random_disturbances.mp4`, and `wind_field.mp4`. Earlier force-informed
+videos are separately labeled under `outputs/dial_mpc/historical_known_loads/`.
+These local files are not downloaded by cloning the repository. The selected
+published copies linked below remain in `mpc/assets/`.
+
+New `python -m mpc --video` runs default to `outputs/dial_mpc/demo/`, with
+each case's video at `<case>/walking.mp4` alongside its states and logs.
 
 ## Current status
 
@@ -77,8 +96,8 @@ The DIAL code uses only `requirements.txt`; no Torch, JAX or RL checkpoint is
 needed. After installing those dependencies, run:
 
 ```powershell
-.\.venv\Scripts\python.exe -m mpc --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --output mpc/outputs/dial_g1_unknown --video
-.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/dial_g1_unknown/calm mpc/outputs/dial_g1_unknown/random mpc/outputs/dial_g1_unknown/tornado --output mpc/outputs/dial_g1_unknown/comparison.mp4
+.\.venv\Scripts\python.exe -m mpc --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --output outputs/dial_mpc/new_run --video
+.\.venv\Scripts\python.exe -m mpc.compare outputs/dial_mpc/new_run/calm outputs/dial_mpc/new_run/random outputs/dial_mpc/new_run/tornado --output outputs/dial_mpc/new_run/comparison.mp4
 ```
 
 Allow several minutes per case on a CPU. `--video` renders the actual

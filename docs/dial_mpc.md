@@ -1,10 +1,16 @@
 # DIAL-MPC G1 implementation
 
-The project now implements a **CPU NumPy/MuJoCo port of DIAL-MPC**, with a
+The project implements an **independent CPU NumPy/MuJoCo adaptation based on DIAL-MPC**, with a
 G1-specific tracking objective and gait reference. It is an online optimizer,
 not an RL policy; it needs no trained checkpoint. This is not the upstream H1
 example, and successful walking/robustness must be established by the saved
 physical runs rather than inferred from the optimizer implementation.
+
+This is not the unchanged official code or a reproduced paper benchmark.
+Our tests do not run the official optimizer side by side and do not establish
+numerical or behavioral equivalence. The [provenance and differences](../mpc/UPSTREAM.md)
+describe the changed gait prior, action space, costs, integration, horizon/cost
+timing and numerical backend; these differences matter when interpreting results.
 
 The current comparison treats all external impacts as **unknown to the
 controller**. Its only runtime input is robot time, generalized position and
@@ -139,8 +145,8 @@ issues have been solved.
 From the repository root with the existing project environment:
 
 ```powershell
-.\.venv\Scripts\python.exe -m mpc.run --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --video --output mpc/outputs/dial_g1_unknown
-.\.venv\Scripts\python.exe -m mpc.compare mpc/outputs/dial_g1_unknown/calm mpc/outputs/dial_g1_unknown/random mpc/outputs/dial_g1_unknown/tornado --output mpc/outputs/dial_g1_unknown/comparison.mp4
+.\.venv\Scripts\python.exe -m mpc.run --cases calm random tornado --duration 4 --controller-config mpc/configs/g1_demo.json --wind-scale 1 --disturbance-strength 0.2 --video --output outputs/dial_mpc/new_run
+.\.venv\Scripts\python.exe -m mpc.compare outputs/dial_mpc/new_run/calm outputs/dial_mpc/new_run/random outputs/dial_mpc/new_run/tornado --output outputs/dial_mpc/new_run/comparison.mp4
 ```
 
 Each case writes `summary.json`, `planner.json`, `trajectory.npz` and a model
