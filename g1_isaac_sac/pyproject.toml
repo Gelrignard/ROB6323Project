@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "g1-wind-sac-v5-5090-standalone"
+version = "0.3.0"
+description = "Standalone Isaac Lab 3.0 G1 Flat residual SAC v5: RTX 5090, wind curriculum, Newton GL video"
+requires-python = ">=3.12"
+dependencies = ["gymnasium", "torch", "numpy"]
+
+[project.entry-points."isaaclab.tasks"]
+g1_wind_sac_v5 = "g1_wind_sac_v5"
+
+[tool.setuptools.packages.find]
+include = ["g1_wind_sac_v5*"]
